@@ -1,0 +1,2206 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Focal — Lens &amp; Format Matcher</title>
+<style>
+  :root{
+    --bg: #1A1A1A;
+    --panel: #212121;
+    --panel-raised: #262626;
+    --divider: #3D3D3D;
+    --text: #E8E6E0;
+    --text-dim: #9A968C;
+    --accent: #FF6B1A;
+    --accent-dim: #8a3c10;
+    --ok: #6B9B7C;
+    --warn: #C44545;
+    --mono: "JetBrains Mono", "SF Mono", ui-monospace, Menlo, monospace;
+    --sans: "Inter", -apple-system, BlinkMacSystemFont, sans-serif;
+  }
+
+  *{ box-sizing: border-box; }
+  html,body{ margin:0; padding:0; background:var(--bg); color:var(--text); font-family:var(--sans); }
+  body{ min-height:100vh; }
+
+  a{ color:var(--accent); }
+
+  .app{
+    max-width: 1280px;
+    margin: 0 auto;
+    padding: 28px 24px 60px;
+  }
+
+  /* ---------- HEADER ---------- */
+  .header{
+    display:flex;
+    align-items:baseline;
+    justify-content:space-between;
+    border-bottom: 1px solid var(--divider);
+    padding-bottom: 18px;
+    margin-bottom: 28px;
+    flex-wrap: wrap;
+    gap: 10px;
+  }
+  .brand{
+    display:flex;
+    align-items:baseline;
+    gap: 12px;
+  }
+  .brand h1{
+    font-family: var(--mono);
+    font-size: 22px;
+    letter-spacing: 0.5px;
+    margin:0;
+    font-weight: 600;
+  }
+  .brand .ring{
+    color: var(--accent);
+  }
+  .brand .tag{
+    color: var(--text-dim);
+    font-size: 12px;
+    font-family: var(--mono);
+    letter-spacing: 0.5px;
+  }
+  .tabs{
+    display:flex;
+    gap: 4px;
+  }
+  .tab-btn{
+    background:none;
+    border: 1px solid var(--divider);
+    color: var(--text-dim);
+    font-family: var(--mono);
+    font-size: 12px;
+    letter-spacing: 0.5px;
+    padding: 8px 14px;
+    border-radius: 3px;
+    cursor:pointer;
+    transition: all .15s ease;
+  }
+  .tab-btn:hover{ color: var(--text); border-color: var(--text-dim); }
+  .tab-btn.active{
+    color: var(--accent);
+    border-color: var(--accent-dim);
+    background: rgba(255,107,26,0.07);
+  }
+
+  .view{ display:none; }
+  .view.active{ display:block; }
+
+  /* ---------- CALC LAYOUT ---------- */
+  .calc-grid{
+    display:grid;
+    grid-template-columns: 360px 1fr;
+    gap: 22px;
+  }
+  @media (max-width: 880px){
+    .calc-grid{ grid-template-columns: 1fr; }
+  }
+
+  .panel{
+    background: var(--panel);
+    border: 1px solid var(--divider);
+    border-radius: 6px;
+    padding: 20px;
+  }
+
+  .panel + .panel{ margin-top: 18px; }
+
+  .panel-label{
+    font-family: var(--mono);
+    font-size: 11px;
+    letter-spacing: 1.5px;
+    color: var(--text-dim);
+    text-transform: uppercase;
+    margin: 0 0 14px 0;
+    display:flex;
+    align-items:center;
+    gap: 8px;
+  }
+  .panel-label::after{
+    content:"";
+    flex:1;
+    height:1px;
+    background: var(--divider);
+  }
+
+  .field{ margin-bottom: 16px; }
+  .field:last-child{ margin-bottom: 0; }
+  .field label{
+    display:block;
+    font-size: 12px;
+    color: var(--text-dim);
+    margin-bottom: 6px;
+    font-family: var(--sans);
+  }
+
+  select, input[type=number], input[type=text]{
+    width: 100%;
+    background: var(--panel-raised);
+    border: 1px solid var(--divider);
+    color: var(--text);
+    font-family: var(--mono);
+    font-size: 14px;
+    padding: 10px 10px;
+    border-radius: 3px;
+    outline: none;
+    transition: border-color .15s ease;
+  }
+  select:focus, input:focus{
+    border-color: var(--accent);
+  }
+  select{ cursor:pointer; }
+
+  .inline-pair{
+    display:grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 10px;
+  }
+
+  .focal-slider-row{
+    display:flex;
+    align-items:center;
+    gap: 12px;
+  }
+  .focal-slider-row input[type=range]{
+    flex:1;
+    accent-color: var(--accent);
+  }
+  .focal-readout{
+    font-family: var(--mono);
+    font-size: 18px;
+    color: var(--accent);
+    min-width: 64px;
+    text-align:right;
+  }
+
+  /* ---------- LENS TREE DROPDOWN ---------- */
+  .lens-tree-trigger{
+    width: 100%;
+    text-align:left;
+    background: var(--panel-raised);
+    border: 1px solid var(--divider);
+    color: var(--text);
+    font-family: var(--mono);
+    font-size: 13px;
+    padding: 10px 10px;
+    border-radius: 3px;
+    cursor:pointer;
+    position: relative;
+  }
+  .lens-tree-trigger::after{
+    content: "▾";
+    position: absolute;
+    right: 10px;
+    color: var(--text-dim);
+  }
+  .lens-tree-trigger:hover{ border-color: var(--text-dim); }
+
+  .tree-popover-backdrop{
+    position: fixed; inset:0;
+    z-index: 60;
+    background: rgba(0,0,0,0.5);
+    display:flex;
+    align-items:center;
+    justify-content:center;
+    padding: 20px;
+  }
+  .tree-popover{
+    background: var(--panel);
+    border: 1px solid var(--divider);
+    border-radius: 8px;
+    width: 100%;
+    max-width: 420px;
+    max-height: 78vh;
+    display:flex;
+    flex-direction: column;
+    overflow:hidden;
+  }
+  .tree-popover-header{
+    padding: 14px 16px 10px;
+    border-bottom: 1px solid var(--divider);
+  }
+  .tree-filter-row{
+    display:flex;
+    gap: 6px;
+    margin-top: 10px;
+  }
+  .tree-filter-btn{
+    flex:1;
+    font-family: var(--mono);
+    font-size: 11px;
+    letter-spacing: 0.5px;
+    padding: 6px 8px;
+    border-radius: 3px;
+    border: 1px solid var(--divider);
+    background: var(--panel-raised);
+    color: var(--text-dim);
+    cursor:pointer;
+  }
+  .tree-filter-btn.active{
+    color: var(--accent);
+    border-color: var(--accent-dim);
+    background: rgba(255,107,26,0.07);
+  }
+  .tree-body{
+    overflow-y:auto;
+    padding: 6px 8px 14px;
+  }
+  .tree-none-option{
+    width:100%;
+    text-align:left;
+    background:none;
+    border:none;
+    color: var(--text-dim);
+    font-family: var(--mono);
+    font-size: 13px;
+    padding: 9px 10px;
+    cursor:pointer;
+    border-radius: 3px;
+  }
+  .tree-none-option:hover{ background: var(--panel-raised); }
+  .tree-manufacturer{
+    margin-top: 4px;
+    border-radius: 4px;
+  }
+  .tree-manufacturer.expanded{
+    background: rgba(255,107,26,0.04);
+  }
+  .tree-manufacturer-label{
+    width:100%;
+    text-align:left;
+    background:none;
+    border:none;
+    cursor:pointer;
+    font-family: var(--mono);
+    font-size: 11px;
+    letter-spacing: 1px;
+    color: var(--accent);
+    text-transform: uppercase;
+    padding: 8px 10px;
+    display:flex;
+    align-items:center;
+    gap: 6px;
+    border-radius: 3px;
+  }
+  .tree-manufacturer-label:hover{ background: var(--panel-raised); }
+  .tree-family-list{
+    padding-left: 6px;
+  }
+  .tree-family{
+    border-radius: 4px;
+  }
+  .tree-family.expanded{
+    background: rgba(255,107,26,0.03);
+  }
+  .tree-family-label{
+    width:100%;
+    text-align:left;
+    background:none;
+    border:none;
+    cursor:pointer;
+    font-family: var(--sans);
+    font-size: 12px;
+    color: var(--text);
+    padding: 7px 10px 7px 18px;
+    display:flex;
+    align-items:center;
+    gap: 6px;
+    border-radius: 3px;
+  }
+  .tree-family-label:hover{ background: var(--panel-raised); }
+  .tree-caret{
+    color: var(--text-dim);
+    font-size: 10px;
+    width: 10px;
+    display:inline-block;
+  }
+  .tree-focal-option{
+    width:100%;
+    text-align:left;
+    background:none;
+    border:none;
+    color: var(--text);
+    font-family: var(--mono);
+    font-size: 13px;
+    padding: 7px 10px 7px 38px;
+    cursor:pointer;
+    border-radius: 3px;
+    display:flex;
+    justify-content: space-between;
+  }
+  .tree-focal-option:hover{ background: var(--panel-raised); }
+  .tree-focal-option.active{
+    color: var(--accent);
+    background: rgba(255,107,26,0.08);
+  }
+  .tree-focal-option .ana-tag{
+    color: var(--ok);
+    font-size: 11px;
+  }
+
+  /* ---------- SQUEEZE CONTROLS ---------- */
+  .squeeze-row{
+    display:flex;
+    gap: 8px;
+  }
+  .squeeze-row select{ flex:1; }
+  .squeeze-row input[type=number]{ flex:1; }
+  .squeeze-badge{
+    display:inline-block;
+    margin-top: 8px;
+    font-family: var(--mono);
+    font-size: 10px;
+    letter-spacing: 1px;
+    color: var(--ok);
+    border: 1px solid #2f4a36;
+    background: rgba(107,155,124,0.08);
+    padding: 3px 8px;
+    border-radius: 3px;
+  }
+
+  /* ---------- RESULTS ---------- */
+  .results-top{
+    display:grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 18px;
+    margin-bottom: 18px;
+  }
+  @media (max-width: 600px){ .results-top{ grid-template-columns: 1fr; } }
+
+  .readout-card{
+    background: var(--panel);
+    border: 1px solid var(--divider);
+    border-radius: 6px;
+    padding: 18px 20px;
+  }
+  .readout-card .rc-label{
+    font-family: var(--mono);
+    font-size: 11px;
+    letter-spacing: 1px;
+    color: var(--text-dim);
+    text-transform: uppercase;
+    margin-bottom: 8px;
+  }
+  .readout-card .rc-value{
+    font-family: var(--mono);
+    font-size: 38px;
+    color: var(--accent);
+    line-height: 1;
+    font-weight: 600;
+  }
+  .readout-card .rc-sub{
+    font-family: var(--mono);
+    font-size: 12px;
+    color: var(--text-dim);
+    margin-top: 6px;
+  }
+
+  .status-banner{
+    display:flex;
+    align-items:center;
+    gap: 10px;
+    padding: 12px 16px;
+    border-radius: 6px;
+    font-family: var(--mono);
+    font-size: 13px;
+    margin-bottom: 18px;
+    border: 1px solid var(--divider);
+  }
+  .status-banner.ok{ border-color: #2f4a36; background: rgba(107,155,124,0.08); color: var(--ok); }
+  .status-banner.warn{ border-color: #5a2a2a; background: rgba(196,69,69,0.08); color: var(--warn); }
+  .status-dot{
+    width:8px; height:8px; border-radius:50%;
+    flex-shrink:0;
+  }
+  .status-banner.ok .status-dot{ background: var(--ok); }
+  .status-banner.warn .status-dot{ background: var(--warn); }
+
+  .vmismatch-note{
+    font-family: var(--mono);
+    font-size: 12px;
+    color: var(--text-dim);
+    line-height: 1.5;
+    margin: 0 0 18px 0;
+    padding: 10px 14px;
+    border-left: 2px solid var(--divider);
+  }
+
+  .diagram-wrap{
+    background: var(--panel);
+    border: 1px solid var(--divider);
+    border-radius: 6px;
+    padding: 20px;
+  }
+
+  .legend{
+    display:flex;
+    gap: 22px;
+    margin-top: 12px;
+    flex-wrap: wrap;
+  }
+  .legend-item{
+    display:flex;
+    align-items:center;
+    gap: 8px;
+    font-family: var(--mono);
+    font-size: 12px;
+    color: var(--text-dim);
+  }
+  .legend-swatch{
+    width: 14px; height: 3px;
+    border-radius: 1px;
+  }
+
+  .specs-table{
+    width:100%;
+    border-collapse: collapse;
+    margin-top: 18px;
+    font-family: var(--mono);
+    font-size: 13px;
+  }
+  .specs-table th, .specs-table td{
+    text-align: left;
+    padding: 9px 10px;
+    border-bottom: 1px solid var(--divider);
+  }
+  .specs-table th{
+    color: var(--text-dim);
+    font-size: 11px;
+    letter-spacing: 0.5px;
+    text-transform: uppercase;
+    font-weight: 500;
+  }
+  .specs-table td.num{ color: var(--accent); }
+  .specs-table td.dim{ color: var(--text-dim); }
+
+  /* ---------- NEAREST AVAILABLE FOCAL ---------- */
+  .nearest-focal-scope{
+    font-family: var(--mono);
+    font-size: 12px;
+    color: var(--text-dim);
+    margin: 0 0 14px 0;
+  }
+  .nearest-focal-row{
+    display:grid;
+    grid-template-columns: 1fr auto 1fr;
+    gap: 14px;
+    align-items:center;
+  }
+  .nf-card{
+    background: var(--panel-raised);
+    border: 1px solid var(--divider);
+    border-radius: 6px;
+    padding: 14px 16px;
+    text-align:center;
+  }
+  .nf-card.empty{
+    color: var(--text-dim);
+    font-family: var(--mono);
+    font-size: 12px;
+    border-style: dashed;
+  }
+  .nf-card .nf-value{
+    font-family: var(--mono);
+    font-size: 22px;
+    color: var(--accent);
+    font-weight: 600;
+  }
+  .nf-card .nf-diff{
+    font-family: var(--mono);
+    font-size: 12px;
+    color: var(--text-dim);
+    margin-top: 4px;
+  }
+  .nf-card .nf-label{
+    font-family: var(--mono);
+    font-size: 10px;
+    letter-spacing: 1px;
+    color: var(--text-dim);
+    text-transform: uppercase;
+    margin-bottom: 6px;
+  }
+  .nf-arrow{
+    font-family: var(--mono);
+    font-size: 13px;
+    color: var(--text-dim);
+    text-align:center;
+  }
+  .nf-arrow .nf-target-value{
+    color: var(--text);
+    font-weight: 600;
+    display:block;
+    margin-top: 2px;
+  }
+
+  /* ---------- LIBRARY VIEW ---------- */
+  .lib-grid{
+    display:grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 22px;
+  }
+  @media (max-width: 880px){ .lib-grid{ grid-template-columns: 1fr; } }
+
+  .lib-toolbar{
+    display:flex;
+    justify-content: space-between;
+    align-items:center;
+    margin-bottom: 14px;
+    gap: 10px;
+    flex-wrap: wrap;
+  }
+
+  button{
+    font-family: var(--mono);
+    font-size: 12px;
+    letter-spacing: 0.5px;
+    cursor: pointer;
+    border-radius: 3px;
+    border: 1px solid var(--divider);
+    background: var(--panel-raised);
+    color: var(--text);
+    padding: 8px 12px;
+    transition: all .15s ease;
+  }
+  button:hover{ border-color: var(--text-dim); }
+  button.primary{
+    background: var(--accent);
+    border-color: var(--accent);
+    color: #1A1A1A;
+    font-weight: 600;
+  }
+  button.primary:hover{ background: #ff7d33; }
+  button.ghost{ background:none; }
+  button.small{ padding: 5px 9px; font-size: 11px; }
+  button.danger:hover{ border-color: var(--warn); color: var(--warn); }
+
+  .entry-list{
+    display:flex;
+    flex-direction: column;
+    gap: 8px;
+    max-height: 480px;
+    overflow-y: auto;
+    padding-right: 4px;
+  }
+  .entry-list.wide{
+    max-height: none;
+    display:grid;
+    grid-template-columns: repeat(auto-fill, minmax(280px, 1fr));
+    gap: 10px;
+    align-items: start;
+  }
+  .entry-row{
+    display:flex;
+    align-items:flex-start;
+    justify-content: space-between;
+    gap: 12px;
+    background: var(--panel-raised);
+    border: 1px solid var(--divider);
+    border-radius: 4px;
+    padding: 10px 12px;
+  }
+  .entry-row .e-name{
+    font-family: var(--mono);
+    font-size: 13px;
+  }
+  .entry-row .e-meta{
+    font-family: var(--mono);
+    font-size: 11px;
+    color: var(--text-dim);
+    margin-top: 2px;
+  }
+  .entry-actions{ display:flex; gap:6px; flex-shrink:0; padding-top:1px; }
+  /* Edit/Delete stay hidden until edit mode is toggled on, so browsing the
+     library isn't cluttered with action buttons on every row by default. */
+  .entry-list:not(.edit-mode) .entry-actions{ display:none; }
+  .entry-list.edit-mode .entry-row{ border-color: var(--accent-dim); }
+
+  .lib-toolbar .small.active{
+    color: var(--accent);
+    border-color: var(--accent-dim);
+    background: rgba(255,107,26,0.07);
+  }
+
+  .form-grid{
+    display:grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 12px;
+  }
+  .form-grid .full{ grid-column: 1 / -1; }
+
+  .modal-backdrop{
+    position: fixed; inset:0;
+    background: rgba(0,0,0,0.6);
+    display:flex; align-items:center; justify-content:center;
+    z-index: 50;
+    padding: 20px;
+  }
+  .modal{
+    background: var(--panel);
+    border: 1px solid var(--divider);
+    border-radius: 8px;
+    padding: 24px;
+    max-width: 480px;
+    width: 100%;
+    max-height: 90vh;
+    overflow-y: auto;
+  }
+  .modal h3{
+    font-family: var(--mono);
+    font-size: 15px;
+    margin: 0 0 16px 0;
+    color: var(--accent);
+  }
+  .modal-actions{
+    display:flex;
+    justify-content: flex-end;
+    gap: 10px;
+    margin-top: 18px;
+  }
+  .hidden{ display:none !important; }
+
+  .footer-note{
+    font-family: var(--mono);
+    font-size: 11px;
+    color: var(--text-dim);
+    margin-top: 30px;
+    line-height: 1.6;
+  }
+
+  ::-webkit-scrollbar{ width: 8px; }
+  ::-webkit-scrollbar-thumb{ background: var(--divider); border-radius: 4px; }
+  ::-webkit-scrollbar-track{ background: transparent; }
+
+  input:focus-visible, select:focus-visible, button:focus-visible{
+    outline: 2px solid var(--accent);
+    outline-offset: 1px;
+  }
+</style>
+</head>
+<body>
+
+<div class="app">
+
+  <div class="header">
+    <div class="brand">
+      <h1><span class="ring">◐</span> FOCAL</h1>
+      <span class="tag">LENS / FORMAT MATCHER</span>
+    </div>
+    <div class="tabs">
+      <button class="tab-btn active" data-view="calc">CALCULATOR</button>
+      <button class="tab-btn" data-view="formats">FORMATS</button>
+      <button class="tab-btn" data-view="lenses">LENSES</button>
+    </div>
+  </div>
+
+  <!-- ===================== CALCULATOR VIEW ===================== -->
+  <div class="view active" id="view-calc">
+    <div class="calc-grid">
+
+      <!-- LEFT CONTROL STRIP -->
+      <div class="controls">
+        <div class="panel">
+          <p class="panel-label">Source</p>
+          <div class="field">
+            <label for="srcFormatTrigger">Sensor format</label>
+            <button type="button" class="lens-tree-trigger" id="srcFormatTrigger">—</button>
+          </div>
+          <div class="field">
+            <label for="srcLensTrigger">Lens (optional — sets focal length, image circle &amp; squeeze)</label>
+            <button type="button" class="lens-tree-trigger" id="srcLensTrigger">— none / manual focal —</button>
+          </div>
+          <div class="field">
+            <label for="srcFocal">Focal length (mm)</label>
+            <div class="focal-slider-row">
+              <input type="range" id="srcFocal" min="6" max="300" step="1" value="35">
+              <span class="focal-readout" id="srcFocalReadout">35mm</span>
+            </div>
+          </div>
+          <div class="field">
+            <label for="srcSqueeze">Anamorphic squeeze</label>
+            <div class="squeeze-row">
+              <select id="srcSqueeze">
+                <option value="1.0">1.0x — Spherical</option>
+                <option value="1.25">1.25x</option>
+                <option value="1.3">1.3x</option>
+                <option value="1.5">1.5x</option>
+                <option value="1.65">1.65x</option>
+                <option value="1.8">1.8x</option>
+                <option value="2.0">2.0x</option>
+                <option value="custom">Custom…</option>
+              </select>
+              <input type="number" id="srcSqueezeCustom" class="hidden" step="0.01" min="1" placeholder="e.g. 1.4" value="1.4">
+            </div>
+            <span class="squeeze-badge hidden" id="srcSqueezeBadge">ANAMORPHIC</span>
+          </div>
+        </div>
+
+        <div class="panel">
+          <p class="panel-label">Target</p>
+          <div class="field">
+            <label for="tgtFormatTrigger">Sensor format</label>
+            <button type="button" class="lens-tree-trigger" id="tgtFormatTrigger">—</button>
+          </div>
+          <div class="field">
+            <label for="tgtLensTrigger">Lens on target (optional — for coverage check &amp; squeeze)</label>
+            <button type="button" class="lens-tree-trigger" id="tgtLensTrigger">— none / manual focal —</button>
+          </div>
+          <div class="field">
+            <label for="tgtSqueeze">Anamorphic squeeze</label>
+            <div class="squeeze-row">
+              <select id="tgtSqueeze">
+                <option value="1.0">1.0x — Spherical</option>
+                <option value="1.25">1.25x</option>
+                <option value="1.3">1.3x</option>
+                <option value="1.5">1.5x</option>
+                <option value="1.65">1.65x</option>
+                <option value="1.8">1.8x</option>
+                <option value="2.0">2.0x</option>
+                <option value="custom">Custom…</option>
+              </select>
+              <input type="number" id="tgtSqueezeCustom" class="hidden" step="0.01" min="1" placeholder="e.g. 1.4" value="1.4">
+            </div>
+            <span class="squeeze-badge hidden" id="tgtSqueezeBadge">ANAMORPHIC</span>
+          </div>
+        </div>
+      </div>
+
+      <!-- RIGHT RESULTS -->
+      <div class="results">
+
+        <div class="results-top">
+          <div class="readout-card">
+            <div class="rc-label">Equivalent focal length</div>
+            <div class="rc-value" id="rcFocal">—</div>
+            <div class="rc-sub" id="rcFocalSub">on target format</div>
+          </div>
+          <div class="readout-card">
+            <div class="rc-label">Focal multiplier (src → tgt)</div>
+            <div class="rc-value" id="rcCrop">—</div>
+            <div class="rc-sub" id="rcCropSub">multiply source focal by this to match FoV</div>
+          </div>
+        </div>
+
+        <div class="status-banner ok" id="coverageBanner" style="display:none;">
+          <span class="status-dot"></span>
+          <span id="coverageText">—</span>
+        </div>
+
+        <p class="vmismatch-note" id="vMismatchNote" style="display:none;"></p>
+
+        <div class="panel" style="margin-bottom:18px;">
+          <p class="panel-label">Nearest available focal — target</p>
+          <p class="nearest-focal-scope" id="nearestFocalScope"></p>
+          <div class="nearest-focal-row" id="nearestFocalRow"></div>
+        </div>
+
+        <div class="diagram-wrap">
+          <p class="panel-label">Sensor coverage — to scale</p>
+          <div id="diagramHost"></div>
+          <div class="legend">
+            <div class="legend-item"><span class="legend-swatch" style="background:#FF6B1A;"></span> Source sensor</div>
+            <div class="legend-item"><span class="legend-swatch" style="background:#6B9B7C;"></span> Target sensor</div>
+            <div class="legend-item" id="legendCircle" style="display:none;"><span class="legend-swatch" style="background:#9A968C; border-radius:50%; width:10px; height:10px;"></span> Lens image circle</div>
+            <div class="legend-item" id="legendSqueeze"><span class="legend-swatch" style="background:none; border-top:2px dashed #9A968C; height:0;"></span> Dashed = effective width with squeeze applied</div>
+          </div>
+        </div>
+
+        <div class="panel" style="margin-top:18px;">
+          <p class="panel-label">Detail</p>
+          <table class="specs-table">
+            <thead>
+              <tr><th></th><th>Source</th><th>Target</th></tr>
+            </thead>
+            <tbody id="detailTableBody"></tbody>
+          </table>
+        </div>
+
+      </div>
+    </div>
+  </div>
+
+  <!-- ===================== FORMATS VIEW ===================== -->
+  <div class="view" id="view-formats">
+    <div class="lib-toolbar">
+      <p class="panel-label" style="margin:0; flex:1;">Sensor formats</p>
+      <button class="small" id="formatsEditToggle">Edit</button>
+      <button class="small" id="btnAddFormat">+ Add format</button>
+    </div>
+    <div class="entry-list wide" id="formatList"></div>
+
+    <div class="panel" style="margin-top:22px;">
+      <p class="panel-label">Import / export</p>
+      <div style="display:flex; gap:10px; flex-wrap:wrap;">
+        <button id="btnExportJson">Export JSON (all)</button>
+        <button id="btnExportCsv">Export CSV (formats + lenses)</button>
+        <label class="button-like" style="display:inline-block;">
+          <button id="btnImportTrigger" type="button">Import JSON / CSV</button>
+          <input type="file" id="importFile" accept=".json,.csv" class="hidden">
+        </label>
+        <button id="btnResetLibrary" class="danger">Reset to defaults</button>
+      </div>
+      <p class="footer-note">
+        JSON export preserves both formats and lenses in one file. CSV export produces two files since CSV is a flat format — re-importing a CSV will only update whichever type matches its columns. Imports merge by name (same-name entries get overwritten); they do not delete entries absent from the file. Reset to defaults clears both formats and lenses.
+      </p>
+    </div>
+  </div>
+
+  <!-- ===================== LENSES VIEW ===================== -->
+  <div class="view" id="view-lenses">
+    <div class="lib-toolbar">
+      <p class="panel-label" style="margin:0; flex:1;">Lenses</p>
+      <button class="small" id="lensesEditToggle">Edit</button>
+      <button class="small" id="btnAddLens">+ Add lens</button>
+    </div>
+    <div class="entry-list wide" id="lensList"></div>
+  </div>
+
+  <p class="footer-note">
+    Equivalent focal length matches horizontal field of view — source focal × (target effective width ÷ source effective width), where effective width = sensor width × anamorphic squeeze (1.0 for spherical). Crop factor referenced against full-frame 36×24mm (43.27mm diagonal). Coverage check compares lens image circle diameter to target sensor diagonal — a difference under 2mm is flagged as marginal. Anamorphic image circles are often elliptical in reality; this tool treats them as circular for simplicity.
+  </p>
+
+</div>
+
+<!-- ===================== LENS TREE POPOVER ===================== -->
+<div class="tree-popover-backdrop hidden" id="lensTreeBackdrop">
+  <div class="tree-popover">
+    <div class="tree-popover-header">
+      <strong style="font-family:var(--mono); font-size:13px; color:var(--text);">Select lens</strong>
+      <div class="tree-filter-row">
+        <button class="tree-filter-btn active" data-filter="all">ALL</button>
+        <button class="tree-filter-btn" data-filter="spherical">SPHERICAL</button>
+        <button class="tree-filter-btn" data-filter="anamorphic">ANAMORPHIC</button>
+      </div>
+    </div>
+    <div class="tree-body" id="lensTreeBody"></div>
+  </div>
+</div>
+
+<!-- ===================== FORMAT TREE POPOVER ===================== -->
+<div class="tree-popover-backdrop hidden" id="formatTreeBackdrop">
+  <div class="tree-popover">
+    <div class="tree-popover-header">
+      <strong style="font-family:var(--mono); font-size:13px; color:var(--text);">Select sensor format</strong>
+    </div>
+    <div class="tree-body" id="formatTreeBody"></div>
+  </div>
+</div>
+
+<!-- ===================== MODALS ===================== -->
+<div class="modal-backdrop hidden" id="formatModalBackdrop">
+  <div class="modal">
+    <h3 id="formatModalTitle">Add sensor format</h3>
+    <input type="hidden" id="formatEditId">
+    <div class="form-grid">
+      <div class="field">
+        <label>Manufacturer</label>
+        <input type="text" id="fmtManufacturer" placeholder="e.g. Sony, or Generic">
+      </div>
+      <div class="field">
+        <label>Family / camera</label>
+        <input type="text" id="fmtFamily" placeholder="e.g. Venice 2">
+      </div>
+      <div class="field full">
+        <label>Mode name (shown under family)</label>
+        <input type="text" id="fmtName" placeholder="e.g. S35 4:3, or 8.6K 3:2 Full Frame">
+      </div>
+      <div class="field">
+        <label>Width (mm)</label>
+        <input type="number" id="fmtWidth" step="0.01">
+      </div>
+      <div class="field">
+        <label>Height (mm)</label>
+        <input type="number" id="fmtHeight" step="0.01">
+      </div>
+      <div class="field full">
+        <label>Notes (optional)</label>
+        <input type="text" id="fmtNotes" placeholder="e.g. open gate, 4.6K">
+      </div>
+    </div>
+    <div class="modal-actions">
+      <button class="ghost" id="fmtCancel">Cancel</button>
+      <button class="primary" id="fmtSave">Save</button>
+    </div>
+  </div>
+</div>
+
+<div class="modal-backdrop hidden" id="lensModalBackdrop">
+  <div class="modal">
+    <h3 id="lensModalTitle">Add lens</h3>
+    <input type="hidden" id="lensEditId">
+    <div class="form-grid">
+      <div class="field">
+        <label>Manufacturer</label>
+        <input type="text" id="lensManufacturer" placeholder="e.g. Zeiss">
+      </div>
+      <div class="field">
+        <label>Family / line</label>
+        <input type="text" id="lensFamily" placeholder="e.g. Supreme Prime">
+      </div>
+      <div class="field full">
+        <label>Focal label (shown under family)</label>
+        <input type="text" id="lensName" placeholder="e.g. 35mm or 18-35mm">
+      </div>
+      <div class="field">
+        <label>Min focal (mm)</label>
+        <input type="number" id="lensFocalMin" step="0.1">
+      </div>
+      <div class="field">
+        <label>Max focal (mm) — same as min if prime</label>
+        <input type="number" id="lensFocalMax" step="0.1">
+      </div>
+      <div class="field">
+        <label>Image circle diameter (mm) — optional, leave blank if unknown</label>
+        <input type="number" id="lensCircle" step="0.1">
+      </div>
+      <div class="field">
+        <label>Native format (optional label)</label>
+        <input type="text" id="lensNativeFormat" placeholder="e.g. FF / S35">
+      </div>
+      <div class="field">
+        <label>Serial number (optional)</label>
+        <input type="text" id="lensSerial" placeholder="e.g. for telling two copies apart">
+      </div>
+      <div class="field full">
+        <label>Anamorphic squeeze (1.0 = spherical)</label>
+        <input type="number" id="lensSqueeze" step="0.01" min="1" value="1.0">
+      </div>
+    </div>
+    <div class="modal-actions">
+      <button class="ghost" id="lensCancel">Cancel</button>
+      <button class="primary" id="lensSave">Save</button>
+    </div>
+  </div>
+</div>
+
+<script>
+/* =========================================================
+   DATA LAYER
+   ========================================================= */
+const FF_DIAGONAL = Math.sqrt(36*36 + 24*24); // 43.266... mm reference
+
+const DEFAULT_FORMATS = [
+  { id: "ff",        name: "Full Frame (36×24)",                 manufacturer: "Generic", family: "Full Frame",  width: 36.0,  height: 24.0,  notes: "Sony Venice 2 FF, Alexa 35 (open gate large format)" },
+  { id: "venice_86k_ff", name: "8.6K 3:2 Full Frame",            manufacturer: "Sony",    family: "Venice 2",    width: 35.9,  height: 24.0,  notes: "_custom_sony" },
+  { id: "s35_4perf", name: "Super35 — 4-perf (24.89×18.66)",     manufacturer: "Generic", family: "Super35",     width: 24.89, height: 18.66, notes: "Classic S35 cine, e.g. Alexa Mini LF S35 crop" },
+  { id: "s35_3perf", name: "Super35 — 3-perf (24.89×14.0)",      manufacturer: "Generic", family: "Super35",     width: 24.89, height: 14.0,  notes: "16:9 cine crop" },
+  { id: "alexa35_4x3", name: "S35 4:3 (28.0×20.22)",             manufacturer: "ARRI",    family: "Alexa 35",    width: 28.0,  height: 20.22, notes: "ARRI Alexa 35, open gate S35+" },
+  { id: "venice_s35", name: "S35 mode (24.3×12.8)",              manufacturer: "Sony",    family: "Venice 2",    width: 24.3,  height: 12.8,  notes: "Venice 2 in S35 crop, 6K 3:2 / 17:9" },
+  { id: "red_s35",   name: "S35 (24.6×13.8)",                    manufacturer: "RED",     family: "Komodo",      width: 24.6,  height: 13.8,  notes: "RED S35-class sensors vary slightly by camera — check yours" },
+  { id: "m43",        name: "Micro Four Thirds (17.3×13.0)",      manufacturer: "Generic", family: "M4/3",        width: 17.3,  height: 13.0,  notes: "Panasonic, BMPCC 4K" },
+  { id: "bmpcc6k",     name: "6K Pro (23.10×12.99)",               manufacturer: "Blackmagic", family: "Pocket Cinema", width: 23.10, height: 12.99, notes: "BMPCC 6K Pro" },
+];
+
+const DEFAULT_LENSES = [
+  { id: "l1", name: "35mm",  manufacturer: "ARRI",  family: "Signature Prime",   focalMin: 35, focalMax: 35, circle: 46.5, nativeFormat: "Full Frame", squeeze: 1.0 },
+  { id: "l2", name: "35mm",  manufacturer: "Zeiss", family: "Supreme Prime",     focalMin: 35, focalMax: 35, circle: 46.5, nativeFormat: "Full Frame", squeeze: 1.0 },
+  { id: "l2b", name: "25mm", manufacturer: "Zeiss", family: "Supreme Prime",    focalMin: 25, focalMax: 25, circle: 46.5, nativeFormat: "Full Frame", squeeze: 1.0 },
+  { id: "l2c", name: "29mm", manufacturer: "Zeiss", family: "Supreme Prime",    focalMin: 29, focalMax: 29, circle: 46.5, nativeFormat: "Full Frame", squeeze: 1.0 },
+  { id: "l2d", name: "50mm", manufacturer: "Zeiss", family: "Supreme Prime",    focalMin: 50, focalMax: 50, circle: 46.5, nativeFormat: "Full Frame", squeeze: 1.0 },
+  { id: "l3", name: "32mm",  manufacturer: "Cooke", family: "S4/i",              focalMin: 32, focalMax: 32, circle: 31.5, nativeFormat: "Super35",    squeeze: 1.0 },
+  { id: "l3b", name: "75mm", manufacturer: "Cooke", family: "S4/i",              focalMin: 75, focalMax: 75, circle: 31.5, nativeFormat: "Super35",    squeeze: 1.0 },
+  { id: "l4", name: "35mm",  manufacturer: "Canon", family: "CN-E Cinema Prime", focalMin: 35, focalMax: 35, circle: 31.1, nativeFormat: "Super35",    squeeze: 1.0 },
+  { id: "l5", name: "18-35mm", manufacturer: "Sigma", family: "Cine Zoom T2",    focalMin: 18, focalMax: 35, circle: 31.5, nativeFormat: "Super35",    squeeze: 1.0 },
+  { id: "l6", name: "12-35mm", manufacturer: "Panasonic", family: "Leica Zoom",  focalMin: 12, focalMax: 35, circle: 22.0, nativeFormat: "M4/3",       squeeze: 1.0 },
+  { id: "l7", name: "50mm",  manufacturer: "Hawk",  family: "V-Lite 1.3x",       focalMin: 50, focalMax: 50, circle: 36.5, nativeFormat: "Super35",    squeeze: 1.3 },
+  { id: "l8", name: "50mm",  manufacturer: "Cooke", family: "Anamorphic/i 1.8x", focalMin: 50, focalMax: 50, circle: 40.0, nativeFormat: "Full Frame", squeeze: 1.8 },
+  { id: "l9", name: "75mm",  manufacturer: "Atlas", family: "Orion 2x",          focalMin: 75, focalMax: 75, circle: 31.5, nativeFormat: "Super35",    squeeze: 2.0 },
+];
+
+function loadLibrary(){
+  let formats, lenses;
+  try{
+    formats = JSON.parse(localStorage.getItem("focal_formats"));
+    lenses = JSON.parse(localStorage.getItem("focal_lenses"));
+  }catch(e){ formats = null; lenses = null; }
+  if(!formats || !Array.isArray(formats) || formats.length === 0) formats = structuredClone(DEFAULT_FORMATS);
+  if(!lenses || !Array.isArray(lenses) || lenses.length === 0) lenses = structuredClone(DEFAULT_LENSES);
+  return { formats, lenses };
+}
+
+function saveLibrary(){
+  localStorage.setItem("focal_formats", JSON.stringify(state.formats));
+  localStorage.setItem("focal_lenses", JSON.stringify(state.lenses));
+}
+
+let state = loadLibrary();
+
+/* =========================================================
+   MATH
+   ========================================================= */
+function diagonal(fmt){
+  return Math.sqrt(fmt.width*fmt.width + fmt.height*fmt.height);
+}
+function cropFactorVsFF(fmt){
+  return FF_DIAGONAL / diagonal(fmt);
+}
+
+/* Anamorphic squeeze widens the EFFECTIVE horizontal field the lens projects,
+   relative to its physical focal length. Squeeze=1.0 (spherical) is a no-op,
+   so every call below is identical to the old behavior when squeeze=1.0. */
+function effectiveWidth(fmt, squeeze){
+  return fmt.width * (squeeze || 1.0);
+}
+function effectiveDiagonal(fmt, squeeze){
+  const w = effectiveWidth(fmt, squeeze);
+  return Math.sqrt(w*w + fmt.height*fmt.height);
+}
+
+/* Equivalent focal length matches HORIZONTAL field of view specifically.
+   This is the correct convention once squeeze is involved: a single diagonal
+   blend of a squeeze-widened horizontal with an untouched vertical doesn't
+   correspond to any one focal length on the target (it satisfies neither
+   axis). Horizontal-match is also the standard convention for "spherical-
+   equivalent" anamorphic focal lengths in the industry. When both squeezes
+   are 1.0, this reduces exactly to the old plain width ratio (and, since
+   width and height scale together for spherical formats, is equivalent to
+   the old diagonal ratio too — so spherical-only behavior is unchanged).
+*/
+function equivalentFocal(srcFocal, srcFmt, tgtFmt, srcSqueeze, tgtSqueeze){
+  const srcEffWidth = effectiveWidth(srcFmt, srcSqueeze);
+  const tgtEffWidth = effectiveWidth(tgtFmt, tgtSqueeze);
+  return srcFocal * (tgtEffWidth / srcEffWidth);
+}
+function hFov(focal, sensorWidth, squeeze){
+  const w = sensorWidth * (squeeze || 1.0);
+  return 2 * Math.atan(w / (2*focal)) * (180/Math.PI);
+}
+function vFov(focal, sensorHeight){
+  return 2 * Math.atan(sensorHeight / (2*focal)) * (180/Math.PI);
+}
+function diagFov(focal, sensorWidth, sensorHeight, squeeze){
+  const w = sensorWidth * (squeeze || 1.0);
+  const diag = Math.sqrt(w*w + sensorHeight*sensorHeight);
+  return 2 * Math.atan(diag / (2*focal)) * (180/Math.PI);
+}
+
+function coverageStatus(circleDiameter, sensorDiag){
+  if(circleDiameter == null) return null;
+  const margin = circleDiameter - sensorDiag;
+  if(margin < 0) return { ok:false, marginal:false, margin };
+  if(margin < 2) return { ok:true, marginal:true, margin };
+  return { ok:true, marginal:false, margin };
+}
+
+/* Standard prime focal ladder, used as a fallback "what do I probably own"
+   reference when no specific lens/family is selected on the target side. */
+const STANDARD_FOCAL_LADDER = [14, 16, 18, 21, 25, 27, 29, 32, 35, 40, 50, 65, 75, 85, 100, 135, 150];
+
+/* Given a target value and a list of available focal lengths (either a
+   lens family's real focals, or the standard ladder), returns the nearest
+   value at-or-below and nearest value at-or-above. Either side can be null
+   if the target value is at or past the end of the list. Exact matches
+   are returned as both below and above with zero diff. */
+function findNearestFocals(value, availableFocals){
+  const sorted = [...new Set(availableFocals)].sort((a,b)=>a-b);
+  let below = null, above = null;
+  for(const f of sorted){
+    if(f <= value) below = f;
+    if(f >= value && above === null) above = f;
+  }
+  return { below, above };
+}
+
+/* Collects every focal length that belongs to the same manufacturer+family
+   as the given lens, from the current library. Used to scope the nearest-
+   focal lookup to "what this family actually offers" rather than the
+   generic standard ladder. */
+function getFamilyFocals(lens){
+  if(!lens) return [];
+  const mfg = lens.manufacturer || "";
+  const fam = lens.family || lens.name;
+  const focals = [];
+  state.lenses.forEach(l=>{
+    const lMfg = l.manufacturer || "";
+    const lFam = l.family || l.name;
+    if(lMfg === mfg && lFam === fam){
+      // zooms contribute both ends of their range as candidate focals
+      focals.push(l.focalMin);
+      if(l.focalMax !== l.focalMin) focals.push(l.focalMax);
+    }
+  });
+  return focals;
+}
+
+/* =========================================================
+   UI: POPULATE SELECTS / STATE
+   ========================================================= */
+const srcFocalSlider = document.getElementById("srcFocal");
+const srcFocalReadout = document.getElementById("srcFocalReadout");
+const srcSqueezeSel = document.getElementById("srcSqueeze");
+const tgtSqueezeSel = document.getElementById("tgtSqueeze");
+const srcSqueezeCustom = document.getElementById("srcSqueezeCustom");
+const tgtSqueezeCustom = document.getElementById("tgtSqueezeCustom");
+
+// Currently selected lens ids for source/target (replaces old flat <select> values)
+const lensSelection = { src: "", tgt: "" };
+// Currently selected format ids for source/target (replaces old flat <select> values)
+const formatSelection = { src: "", tgt: "" };
+
+function updateFormatTriggerLabel(side){
+  const trigger = document.getElementById(side === "src" ? "srcFormatTrigger" : "tgtFormatTrigger");
+  const fmt = getFormatById(formatSelection[side]);
+  if(!fmt){
+    trigger.textContent = "—";
+    return;
+  }
+  const titleLine = [fmt.manufacturer, fmt.family].filter(Boolean).join(" ");
+  trigger.textContent = titleLine ? `${titleLine} — ${fmt.name}` : fmt.name;
+}
+
+function onFormatPicked(side, formatId){
+  formatSelection[side] = formatId;
+  updateFormatTriggerLabel(side);
+  recalc();
+}
+
+function refreshAllSelects(){
+  // Preserve whatever was selected before the rebuild, if it still exists —
+  // refreshAllSelects runs after every library edit, so without this any
+  // unrelated add/edit/delete would silently snap format pickers back to
+  // the hardcoded defaults and discard the person's actual setup.
+  const prevSrc = formatSelection.src;
+  const prevTgt = formatSelection.tgt;
+
+  const srcStillExists = prevSrc && state.formats.some(f=>f.id===prevSrc);
+  const tgtStillExists = prevTgt && state.formats.some(f=>f.id===prevTgt);
+
+  if(srcStillExists){
+    formatSelection.src = prevSrc;
+  } else if(state.formats.find(f=>f.id==="alexa35_4x3")){
+    formatSelection.src = "alexa35_4x3"; // first-load default, or fallback if the selected format was deleted
+  } else if(state.formats.length){
+    formatSelection.src = state.formats[0].id;
+  }
+
+  if(tgtStillExists){
+    formatSelection.tgt = prevTgt;
+  } else if(state.formats.find(f=>f.id==="s35_4perf")){
+    formatSelection.tgt = "s35_4perf";
+  } else if(state.formats.length){
+    formatSelection.tgt = state.formats[0].id;
+  }
+
+  updateFormatTriggerLabel("src");
+  updateFormatTriggerLabel("tgt");
+  updateLensTriggerLabel("src");
+  updateLensTriggerLabel("tgt");
+}
+
+/* =========================================================
+   CALCULATION + RENDER
+   ========================================================= */
+function getFormatById(id){ return state.formats.find(f=>f.id===id); }
+function getLensById(id){ return state.lenses.find(l=>l.id===id); }
+
+function getSqueezeValue(side){
+  const sel = side === "src" ? srcSqueezeSel : tgtSqueezeSel;
+  const custom = side === "src" ? srcSqueezeCustom : tgtSqueezeCustom;
+  if(sel.value === "custom"){
+    const v = parseFloat(custom.value);
+    return (v && v > 0) ? v : 1.0;
+  }
+  return parseFloat(sel.value) || 1.0;
+}
+
+function setSqueezeControl(side, squeezeValue){
+  const sel = side === "src" ? srcSqueezeSel : tgtSqueezeSel;
+  const custom = side === "src" ? srcSqueezeCustom : tgtSqueezeCustom;
+  const presetMatch = Array.from(sel.options).find(o => o.value !== "custom" && parseFloat(o.value) === squeezeValue);
+  if(presetMatch){
+    sel.value = presetMatch.value;
+    custom.classList.add("hidden");
+  } else {
+    sel.value = "custom";
+    custom.value = squeezeValue;
+    custom.classList.remove("hidden");
+  }
+  updateSqueezeBadge(side);
+}
+
+function updateSqueezeBadge(side){
+  const badge = document.getElementById(side === "src" ? "srcSqueezeBadge" : "tgtSqueezeBadge");
+  const v = getSqueezeValue(side);
+  if(v && v > 1.001){
+    badge.textContent = `ANAMORPHIC ${v.toFixed(2).replace(/\.?0+$/,"")}x`;
+    badge.classList.remove("hidden");
+  } else {
+    badge.classList.add("hidden");
+  }
+}
+
+function onLensPicked(side, lensId){
+  lensSelection[side] = lensId;
+  updateLensTriggerLabel(side);
+  const lens = getLensById(lensId);
+  if(lens){
+    if(side === "src"){
+      const f = lens.focalMin === lens.focalMax ? lens.focalMin : Math.round((lens.focalMin+lens.focalMax)/2);
+      srcFocalSlider.value = Math.min(300, Math.max(6, f));
+      srcFocalReadout.textContent = srcFocalSlider.value + "mm";
+    }
+    setSqueezeControl(side, lens.squeeze || 1.0);
+  }
+  recalc();
+}
+
+function updateLensTriggerLabel(side){
+  const trigger = document.getElementById(side === "src" ? "srcLensTrigger" : "tgtLensTrigger");
+  const lens = getLensById(lensSelection[side]);
+  if(!lens){
+    trigger.textContent = "— none / manual focal —";
+    return;
+  }
+  const focalLabel = lens.focalMin === lens.focalMax ? `${lens.focalMin}mm` : `${lens.focalMin}-${lens.focalMax}mm`;
+  const anaTag = (lens.squeeze && lens.squeeze > 1.001) ? ` · ${lens.squeeze}x ANA` : "";
+  const serialTag = lens.serial ? ` · S/N ${lens.serial}` : "";
+  trigger.textContent = `${lens.manufacturer || ""} ${lens.family || lens.name} — ${focalLabel}${anaTag}${serialTag}`.trim();
+}
+
+function recalc(){
+  const srcFmt = getFormatById(formatSelection.src);
+  const tgtFmt = getFormatById(formatSelection.tgt);
+  const srcFocal = parseFloat(srcFocalSlider.value);
+  const tgtLens = getLensById(lensSelection.tgt);
+  const srcLens = getLensById(lensSelection.src);
+  const srcSqueeze = getSqueezeValue("src");
+  const tgtSqueeze = getSqueezeValue("tgt");
+
+  if(!srcFmt || !tgtFmt){ return; }
+
+  updateSqueezeBadge("src");
+  updateSqueezeBadge("tgt");
+
+  const eqFocal = equivalentFocal(srcFocal, srcFmt, tgtFmt, srcSqueeze, tgtSqueeze);
+  // Multiplier is horizontal-match, consistent with equivalentFocal above —
+  // matches what's framed left-to-right, which is the convention that
+  // actually generalizes to anamorphic (diagonal-match does not).
+  const crop = effectiveWidth(tgtFmt, tgtSqueeze) / effectiveWidth(srcFmt, srcSqueeze);
+
+  document.getElementById("rcFocal").textContent = eqFocal.toFixed(1) + "mm";
+  const srcAnaNote = srcSqueeze > 1.001 ? ` (${srcSqueeze.toFixed(2).replace(/\.?0+$/,"")}x ana)` : "";
+  const tgtAnaNote = tgtSqueeze > 1.001 ? ` (${tgtSqueeze.toFixed(2).replace(/\.?0+$/,"")}x ana)` : "";
+  document.getElementById("rcFocalSub").textContent = `${srcFocal}mm on source${srcAnaNote} ≈ ${eqFocal.toFixed(1)}mm on target${tgtAnaNote} — horizontal FoV match`;
+
+  document.getElementById("rcCrop").textContent = "×" + crop.toFixed(2);
+  document.getElementById("rcCropSub").textContent = crop > 1
+    ? "target needs a longer focal length for the same FoV"
+    : crop < 1
+      ? "target needs a shorter focal length for the same FoV"
+      : "1:1 — same coverage";
+
+  // Coverage check: prefer target lens circle if specified, else source lens circle (since the prompt
+  // for this tool is "what if a FF lens is put on an S35 sensor" — source lens, target sensor)
+  const tgtDiag = diagonal(tgtFmt);
+  const checkLens = tgtLens || srcLens;
+  const banner = document.getElementById("coverageBanner");
+  const bannerText = document.getElementById("coverageText");
+
+  if(checkLens && checkLens.circle != null){
+    const status = coverageStatus(checkLens.circle, tgtDiag);
+    banner.style.display = "flex";
+    if(!status.ok){
+      banner.className = "status-banner warn";
+      bannerText.textContent = `Vignette risk: "${checkLens.name}" image circle (⌀${checkLens.circle}mm) is smaller than target sensor diagonal (⌀${tgtDiag.toFixed(2)}mm) by ${Math.abs(status.margin).toFixed(2)}mm.`;
+    } else if(status.marginal){
+      banner.className = "status-banner warn";
+      bannerText.textContent = `Marginal coverage: "${checkLens.name}" image circle (⌀${checkLens.circle}mm) clears target sensor diagonal (⌀${tgtDiag.toFixed(2)}mm) by only ${status.margin.toFixed(2)}mm — corner softness/mechanical vignetting possible depending on housing.`;
+    } else {
+      banner.className = "status-banner ok";
+      bannerText.textContent = `Covers target: "${checkLens.name}" image circle (⌀${checkLens.circle}mm) clears target sensor diagonal (⌀${tgtDiag.toFixed(2)}mm) by ${status.margin.toFixed(2)}mm.`;
+    }
+    if(checkLens.squeeze && checkLens.squeeze > 1.001){
+      bannerText.textContent += " Note: anamorphic image circles are often elliptical — treat this as an approximation.";
+    }
+  } else if(checkLens && checkLens.circle == null){
+    // A lens is selected but has no circle on file — say so explicitly,
+    // rather than silently showing nothing as if coverage were never checked.
+    banner.style.display = "flex";
+    banner.className = "status-banner warn";
+    bannerText.textContent = `No image circle on file for "${checkLens.name}" — coverage can't be checked. Add one in the Lenses tab if you find the spec.`;
+  } else {
+    banner.style.display = "none";
+  }
+
+  // Vertical mismatch note: horizontal-match (by design, see equivalentFocal)
+  // cannot also match vertical FoV once squeeze differs between sides —
+  // that's real anamorphic optics, not a bug, but worth surfacing.
+  const vMismatchNote = document.getElementById("vMismatchNote");
+  if(Math.abs(srcSqueeze - tgtSqueeze) > 0.001){
+    const srcV = vFov(srcFocal, srcFmt.height);
+    const tgtV = vFov(eqFocal, tgtFmt.height);
+    vMismatchNote.style.display = "block";
+    vMismatchNote.textContent = `Vertical FoV won't match exactly here (${srcV.toFixed(1)}° vs ${tgtV.toFixed(1)}°) — this number matches horizontal framing; squeeze differs between source and target so the vertical axis diverges. That's expected anamorphic behavior, not an error.`;
+  } else {
+    vMismatchNote.style.display = "none";
+  }
+
+  renderDiagram(srcFmt, tgtFmt, srcFocal, eqFocal, srcSqueeze, tgtSqueeze);
+  renderDetailTable(srcFmt, tgtFmt, srcFocal, eqFocal, crop, srcSqueeze, tgtSqueeze);
+  renderNearestFocal(eqFocal, tgtLens);
+}
+
+function renderDetailTable(srcFmt, tgtFmt, srcFocal, eqFocal, crop, srcSqueeze, tgtSqueeze){
+  const srcDiag = diagonal(srcFmt);
+  const tgtDiag = diagonal(tgtFmt);
+  const rows = [
+    ["Sensor size (mm)", `${srcFmt.width.toFixed(2)} × ${srcFmt.height.toFixed(2)}`, `${tgtFmt.width.toFixed(2)} × ${tgtFmt.height.toFixed(2)}`],
+    ["Diagonal (mm)", srcDiag.toFixed(2), tgtDiag.toFixed(2)],
+    ["Anamorphic squeeze", "×" + srcSqueeze.toFixed(2), "×" + tgtSqueeze.toFixed(2)],
+    ["Crop factor vs FF", "×" + cropFactorVsFF(srcFmt).toFixed(2), "×" + cropFactorVsFF(tgtFmt).toFixed(2)],
+    ["Focal length (mm)", srcFocal.toFixed(1), eqFocal.toFixed(1)],
+    ["Horizontal FoV (°)", hFov(srcFocal, srcFmt.width, srcSqueeze).toFixed(1), hFov(eqFocal, tgtFmt.width, tgtSqueeze).toFixed(1)],
+    ["Vertical FoV (°)", vFov(srcFocal, srcFmt.height).toFixed(1), vFov(eqFocal, tgtFmt.height).toFixed(1)],
+    ["Diagonal FoV (°)", diagFov(srcFocal, srcFmt.width, srcFmt.height, srcSqueeze).toFixed(1), diagFov(eqFocal, tgtFmt.width, tgtFmt.height, tgtSqueeze).toFixed(1)],
+  ];
+  const tbody = document.getElementById("detailTableBody");
+  tbody.innerHTML = "";
+  rows.forEach(r=>{
+    const tr = document.createElement("tr");
+    tr.innerHTML = `<td class="dim">${r[0]}</td><td class="num">${r[1]}</td><td class="num">${r[2]}</td>`;
+    tbody.appendChild(tr);
+  });
+}
+
+/* "What do I actually own that's close to this number" lookup. Scoped to
+   the target lens's family (manufacturer+family) if one is selected on the
+   target side, since that's gear the person actually has in hand; falls
+   back to a standard prime ladder otherwise, since most kits roughly
+   follow it even before a specific lens has been chosen. */
+function renderNearestFocal(eqFocal, tgtLens){
+  const scopeEl = document.getElementById("nearestFocalScope");
+  const rowEl = document.getElementById("nearestFocalRow");
+
+  let candidates, scopeLabel;
+  if(tgtLens){
+    candidates = getFamilyFocals(tgtLens);
+    const familyName = [tgtLens.manufacturer, tgtLens.family || tgtLens.name].filter(Boolean).join(" ");
+    scopeLabel = candidates.length > 1
+      ? `Within ${familyName} (${candidates.length} focals in library)`
+      : `${familyName} only has one focal in the library — add more to compare`;
+  } else {
+    candidates = STANDARD_FOCAL_LADDER;
+    scopeLabel = "No target lens selected — showing standard prime focal lengths";
+  }
+  scopeEl.textContent = scopeLabel;
+
+  if(candidates.length === 0){
+    rowEl.innerHTML = `<div class="nf-card empty" style="grid-column:1/-1;">No focal data available for this scope.</div>`;
+    return;
+  }
+
+  const { below, above } = findNearestFocals(eqFocal, candidates);
+
+  function cardFor(value, direction){
+    if(value == null){
+      const message = direction === "below" ? "No shorter option available" : "No longer option available";
+      return `<div class="nf-card empty"><div class="nf-label">${direction}</div>${message}</div>`;
+    }
+    const diff = value - eqFocal;
+    const diffLabel = diff === 0 ? "exact match" : (diff > 0 ? `+${diff.toFixed(1)}mm` : `${diff.toFixed(1)}mm`);
+    return `<div class="nf-card"><div class="nf-label">${direction}</div><div class="nf-value">${value}mm</div><div class="nf-diff">${diffLabel}</div></div>`;
+  }
+
+  rowEl.innerHTML = `
+    ${cardFor(below, "below")}
+    <div class="nf-arrow">target<span class="nf-target-value">${eqFocal.toFixed(1)}mm</span></div>
+    ${cardFor(above, "above")}
+  `;
+}
+
+/* To-scale sensor outline overlay, centered on a shared optical axis,
+   with an optional lens image circle ring when a lens with a known
+   image circle is in play. When squeeze is active on a side, a dashed
+   "effective capture width" outline is drawn alongside the true sensor
+   rectangle, so the squeeze is visible rather than just a number. */
+function renderDiagram(srcFmt, tgtFmt, srcFocal, eqFocal, srcSqueeze, tgtSqueeze){
+  const W = 640, H = 320;
+  const cx = W/2, cy = H/2;
+
+  // scale against the larger EFFECTIVE diagonal (squeeze can make a side's
+  // effective footprint bigger than its physical sensor), so nothing clips.
+  const maxEffDiag = Math.max(effectiveDiagonal(srcFmt, srcSqueeze), effectiveDiagonal(tgtFmt, tgtSqueeze));
+  const availableHalfHeight = (H/2) * 0.78;
+  const scale = availableHalfHeight / (maxEffDiag/2);
+
+  function rectFor(fmt, squeeze){
+    const w = fmt.width * scale, h = fmt.height * scale;
+    const effW = effectiveWidth(fmt, squeeze) * scale;
+    return { x: cx - w/2, y: cy - h/2, w, h, effX: cx - effW/2, effW };
+  }
+
+  const srcRect = rectFor(srcFmt, srcSqueeze);
+  const tgtRect = rectFor(tgtFmt, tgtSqueeze);
+
+  // draw the larger-area rect first so the smaller one's outline is never hidden
+  const srcArea = srcFmt.width*srcFmt.height, tgtArea = tgtFmt.width*tgtFmt.height;
+  const srcRectSvg = `<rect x="${srcRect.x.toFixed(1)}" y="${srcRect.y.toFixed(1)}" width="${srcRect.w.toFixed(1)}" height="${srcRect.h.toFixed(1)}" fill="none" stroke="#FF6B1A" stroke-width="2.5"/>`;
+  const tgtRectSvg = `<rect x="${tgtRect.x.toFixed(1)}" y="${tgtRect.y.toFixed(1)}" width="${tgtRect.w.toFixed(1)}" height="${tgtRect.h.toFixed(1)}" fill="none" stroke="#6B9B7C" stroke-width="2.5"/>`;
+  const rectsOrdered = srcArea >= tgtArea ? srcRectSvg + tgtRectSvg : tgtRectSvg + srcRectSvg;
+
+  // squeeze cue: dashed wide outline showing effective (desqueezed) horizontal capture
+  let srcSqueezeSvg = "", tgtSqueezeSvg = "";
+  if(srcSqueeze > 1.001){
+    srcSqueezeSvg = `<rect x="${srcRect.effX.toFixed(1)}" y="${srcRect.y.toFixed(1)}" width="${srcRect.effW.toFixed(1)}" height="${srcRect.h.toFixed(1)}" fill="none" stroke="#FF6B1A" stroke-width="1.5" stroke-dasharray="6 4" opacity="0.65"/>`;
+  }
+  if(tgtSqueeze > 1.001){
+    tgtSqueezeSvg = `<rect x="${tgtRect.effX.toFixed(1)}" y="${tgtRect.y.toFixed(1)}" width="${tgtRect.effW.toFixed(1)}" height="${tgtRect.h.toFixed(1)}" fill="none" stroke="#6B9B7C" stroke-width="1.5" stroke-dasharray="6 4" opacity="0.65"/>`;
+  }
+
+  // optional lens image circle — prefer target lens, fall back to source lens
+  const tgtLens = getLensById(lensSelection.tgt);
+  const srcLens = getLensById(lensSelection.src);
+  const checkLens = tgtLens || srcLens;
+  let circleSvg = "";
+  const legendCircle = document.getElementById("legendCircle");
+  if(checkLens && checkLens.circle){
+    const r = (checkLens.circle/2) * scale;
+    circleSvg = `<circle cx="${cx}" cy="${cy}" r="${r.toFixed(1)}" fill="none" stroke="#9A968C" stroke-width="1.5" stroke-dasharray="5 4"/>`;
+    legendCircle.style.display = "flex";
+  } else {
+    legendCircle.style.display = "none";
+  }
+
+  // dimension labels
+  const srcDiagLabel = `${srcFmt.width.toFixed(1)}×${srcFmt.height.toFixed(1)}mm`;
+  const tgtDiagLabel = `${tgtFmt.width.toFixed(1)}×${tgtFmt.height.toFixed(1)}mm`;
+  const srcSqLabel = srcSqueeze > 1.001 ? ` · ${srcSqueeze.toFixed(2).replace(/\.?0+$/,"")}x ANA` : "";
+  const tgtSqLabel = tgtSqueeze > 1.001 ? ` · ${tgtSqueeze.toFixed(2).replace(/\.?0+$/,"")}x ANA` : "";
+
+  const svg = `
+  <svg viewBox="0 0 ${W} ${H}" width="100%" height="280" xmlns="http://www.w3.org/2000/svg" role="img" aria-label="Sensor size comparison, to scale, with optional lens image circle and anamorphic squeeze outline">
+    <line x1="0" y1="${cy}" x2="${W}" y2="${cy}" stroke="#3D3D3D" stroke-width="1" stroke-dasharray="3 5"/>
+    <line x1="${cx}" y1="0" x2="${cx}" y2="${H}" stroke="#3D3D3D" stroke-width="1" stroke-dasharray="3 5"/>
+    ${circleSvg}
+    ${rectsOrdered}
+    ${srcSqueezeSvg}
+    ${tgtSqueezeSvg}
+    <text x="14" y="22" fill="#FF6B1A" font-family="JetBrains Mono, monospace" font-size="13" font-weight="600">SRC ${srcDiagLabel}${srcSqLabel}</text>
+    <text x="14" y="40" fill="#6B9B7C" font-family="JetBrains Mono, monospace" font-size="13" font-weight="600">TGT ${tgtDiagLabel}${tgtSqLabel}</text>
+  </svg>`;
+
+  document.getElementById("diagramHost").innerHTML = svg;
+}
+
+/* =========================================================
+   EVENT WIRING — CALC VIEW
+   ========================================================= */
+// Format selection changes call recalc() directly inside onFormatPicked,
+// triggered from the format tree popover — no change-event listener needed here.
+srcSqueezeSel.addEventListener("change", ()=>{
+  srcSqueezeCustom.classList.toggle("hidden", srcSqueezeSel.value !== "custom");
+  recalc();
+});
+tgtSqueezeSel.addEventListener("change", ()=>{
+  tgtSqueezeCustom.classList.toggle("hidden", tgtSqueezeSel.value !== "custom");
+  recalc();
+});
+srcSqueezeCustom.addEventListener("input", recalc);
+tgtSqueezeCustom.addEventListener("input", recalc);
+srcFocalSlider.addEventListener("input", ()=>{
+  srcFocalReadout.textContent = srcFocalSlider.value + "mm";
+  recalc();
+});
+
+/* =========================================================
+   LENS TREE POPOVER (manufacturer -> family -> focal, collapsible,
+   remembers each side's last expanded position independently)
+   ========================================================= */
+const lensTreeBackdrop = document.getElementById("lensTreeBackdrop");
+const lensTreeBody = document.getElementById("lensTreeBody");
+let treeActiveSide = "src";
+let treeActiveFilter = "all";
+
+// Per-side expansion memory: which single manufacturer/family is open.
+// Seeded lazily from whatever lens is selected when the dropdown first opens.
+const treeExpansion = {
+  src: { manufacturer: null, family: null },
+  tgt: { manufacturer: null, family: null }
+};
+
+function seedExpansionFromSelection(side){
+  const lens = getLensById(lensSelection[side]);
+  if(lens){
+    treeExpansion[side].manufacturer = lens.manufacturer || "Other";
+    treeExpansion[side].family = lens.family || lens.name;
+  }
+}
+
+function openLensTree(side){
+  treeActiveSide = side;
+  treeActiveFilter = "all";
+  document.querySelectorAll(".tree-filter-btn").forEach(b=>b.classList.toggle("active", b.dataset.filter==="all"));
+  // Only seed from the current lens the first time this side has no remembered
+  // position yet — once the person has navigated manually, that takes priority.
+  if(!treeExpansion[side].manufacturer){
+    seedExpansionFromSelection(side);
+  }
+  renderLensTree();
+  lensTreeBackdrop.classList.remove("hidden");
+  // scroll the remembered/active position into view
+  requestAnimationFrame(()=>{
+    const target = lensTreeBody.querySelector(".tree-family.expanded") || lensTreeBody.querySelector(".tree-manufacturer.expanded");
+    if(target) target.scrollIntoView({ block: "start" });
+  });
+}
+function closeLensTree(){ lensTreeBackdrop.classList.add("hidden"); }
+
+function renderLensTree(){
+  const filtered = state.lenses.filter(l=>{
+    const isAna = l.squeeze && l.squeeze > 1.001;
+    if(treeActiveFilter === "spherical") return !isAna;
+    if(treeActiveFilter === "anamorphic") return isAna;
+    return true;
+  });
+
+  // group by manufacturer -> family
+  const byManufacturer = {};
+  filtered.forEach(l=>{
+    const mfg = l.manufacturer || "Other";
+    const fam = l.family || l.name;
+    byManufacturer[mfg] = byManufacturer[mfg] || {};
+    byManufacturer[mfg][fam] = byManufacturer[mfg][fam] || [];
+    byManufacturer[mfg][fam].push(l);
+  });
+
+  const expansion = treeExpansion[treeActiveSide];
+  const activeLensId = lensSelection[treeActiveSide];
+
+  lensTreeBody.innerHTML = "";
+
+  const noneBtn = document.createElement("button");
+  noneBtn.className = "tree-none-option";
+  noneBtn.id = "treeNoneOption";
+  noneBtn.textContent = "— none / manual focal —";
+  noneBtn.addEventListener("click", ()=>{
+    onLensPicked(treeActiveSide, "");
+    closeLensTree();
+  });
+  lensTreeBody.appendChild(noneBtn);
+
+  Object.keys(byManufacturer).sort().forEach(mfg=>{
+    const mfgExpanded = expansion.manufacturer === mfg;
+
+    const mfgDiv = document.createElement("div");
+    mfgDiv.className = "tree-manufacturer" + (mfgExpanded ? " expanded" : "");
+
+    const mfgBtn = document.createElement("button");
+    mfgBtn.className = "tree-manufacturer-label";
+    const mfgCaret = document.createElement("span");
+    mfgCaret.className = "tree-caret";
+    mfgCaret.textContent = mfgExpanded ? "▾" : "▸";
+    mfgBtn.appendChild(mfgCaret);
+    mfgBtn.appendChild(document.createTextNode(mfg));
+    mfgBtn.addEventListener("click", ()=>{
+      if(expansion.manufacturer === mfg){
+        expansion.manufacturer = null;
+        expansion.family = null;
+      } else {
+        expansion.manufacturer = mfg;
+        expansion.family = null; // collapse any previously-open family when switching manufacturer
+      }
+      renderLensTree();
+    });
+    mfgDiv.appendChild(mfgBtn);
+
+    if(mfgExpanded){
+      const famList = document.createElement("div");
+      famList.className = "tree-family-list";
+
+      Object.keys(byManufacturer[mfg]).sort().forEach(fam=>{
+        const famExpanded = expansion.family === fam;
+
+        const famDiv = document.createElement("div");
+        famDiv.className = "tree-family" + (famExpanded ? " expanded" : "");
+
+        const famBtn = document.createElement("button");
+        famBtn.className = "tree-family-label";
+        const famCaret = document.createElement("span");
+        famCaret.className = "tree-caret";
+        famCaret.textContent = famExpanded ? "▾" : "▸";
+        famBtn.appendChild(famCaret);
+        famBtn.appendChild(document.createTextNode(fam));
+        famBtn.addEventListener("click", ()=>{
+          expansion.family = (expansion.family === fam) ? null : fam;
+          renderLensTree();
+        });
+        famDiv.appendChild(famBtn);
+
+        if(famExpanded){
+          byManufacturer[mfg][fam].forEach(l=>{
+            const focalLabel = l.focalMin === l.focalMax ? `${l.focalMin}mm` : `${l.focalMin}-${l.focalMax}mm`;
+            const isAna = l.squeeze && l.squeeze > 1.001;
+            const isActive = l.id === activeLensId;
+
+            const focalBtn = document.createElement("button");
+            focalBtn.className = "tree-focal-option" + (isActive ? " active" : "");
+            const focalSpan = document.createElement("span");
+            focalSpan.textContent = l.serial ? `${focalLabel} (S/N ${l.serial})` : focalLabel;
+            focalBtn.appendChild(focalSpan);
+            if(isAna){
+              const anaSpan = document.createElement("span");
+              anaSpan.className = "ana-tag";
+              anaSpan.textContent = `${l.squeeze}x ANA`;
+              focalBtn.appendChild(anaSpan);
+            }
+            focalBtn.addEventListener("click", ()=>{
+              onLensPicked(treeActiveSide, l.id);
+              closeLensTree();
+            });
+            famDiv.appendChild(focalBtn);
+          });
+        }
+        famList.appendChild(famDiv);
+      });
+      mfgDiv.appendChild(famList);
+    }
+    lensTreeBody.appendChild(mfgDiv);
+  });
+}
+
+document.querySelectorAll(".tree-filter-btn").forEach(btn=>{
+  btn.addEventListener("click", ()=>{
+    treeActiveFilter = btn.dataset.filter;
+    document.querySelectorAll(".tree-filter-btn").forEach(b=>b.classList.remove("active"));
+    btn.classList.add("active");
+    renderLensTree();
+  });
+});
+
+document.getElementById("srcLensTrigger").addEventListener("click", ()=>openLensTree("src"));
+document.getElementById("tgtLensTrigger").addEventListener("click", ()=>openLensTree("tgt"));
+lensTreeBackdrop.addEventListener("click", (e)=>{
+  if(e.target === lensTreeBackdrop) closeLensTree();
+});
+document.addEventListener("keydown", (e)=>{
+  if(e.key === "Escape" && !lensTreeBackdrop.classList.contains("hidden")) closeLensTree();
+});
+
+/* =========================================================
+   FORMAT TREE POPOVER (manufacturer -> family -> mode, collapsible,
+   remembers each side's last expanded position independently —
+   same pattern as the lens tree above, minus filter row / none-option
+   since a sensor format is always required, unlike an optional lens)
+   ========================================================= */
+const formatTreeBackdrop = document.getElementById("formatTreeBackdrop");
+const formatTreeBody = document.getElementById("formatTreeBody");
+let formatTreeActiveSide = "src";
+
+const formatTreeExpansion = {
+  src: { manufacturer: null, family: null },
+  tgt: { manufacturer: null, family: null }
+};
+
+function seedFormatExpansionFromSelection(side){
+  const fmt = getFormatById(formatSelection[side]);
+  if(fmt){
+    formatTreeExpansion[side].manufacturer = fmt.manufacturer || "Other";
+    formatTreeExpansion[side].family = fmt.family || fmt.name;
+  }
+}
+
+function openFormatTree(side){
+  formatTreeActiveSide = side;
+  if(!formatTreeExpansion[side].manufacturer){
+    seedFormatExpansionFromSelection(side);
+  }
+  renderFormatTree();
+  formatTreeBackdrop.classList.remove("hidden");
+  requestAnimationFrame(()=>{
+    const target = formatTreeBody.querySelector(".tree-family.expanded") || formatTreeBody.querySelector(".tree-manufacturer.expanded");
+    if(target) target.scrollIntoView({ block: "start" });
+  });
+}
+function closeFormatTree(){ formatTreeBackdrop.classList.add("hidden"); }
+
+function renderFormatTree(){
+  // group by manufacturer -> family
+  const byManufacturer = {};
+  state.formats.forEach(f=>{
+    const mfg = f.manufacturer || "Other";
+    const fam = f.family || f.name;
+    byManufacturer[mfg] = byManufacturer[mfg] || {};
+    byManufacturer[mfg][fam] = byManufacturer[mfg][fam] || [];
+    byManufacturer[mfg][fam].push(f);
+  });
+
+  const expansion = formatTreeExpansion[formatTreeActiveSide];
+  const activeFormatId = formatSelection[formatTreeActiveSide];
+
+  formatTreeBody.innerHTML = "";
+
+  Object.keys(byManufacturer).sort().forEach(mfg=>{
+    const mfgExpanded = expansion.manufacturer === mfg;
+
+    const mfgDiv = document.createElement("div");
+    mfgDiv.className = "tree-manufacturer" + (mfgExpanded ? " expanded" : "");
+
+    const mfgBtn = document.createElement("button");
+    mfgBtn.className = "tree-manufacturer-label";
+    const mfgCaret = document.createElement("span");
+    mfgCaret.className = "tree-caret";
+    mfgCaret.textContent = mfgExpanded ? "▾" : "▸";
+    mfgBtn.appendChild(mfgCaret);
+    mfgBtn.appendChild(document.createTextNode(mfg));
+    mfgBtn.addEventListener("click", ()=>{
+      if(expansion.manufacturer === mfg){
+        expansion.manufacturer = null;
+        expansion.family = null;
+      } else {
+        expansion.manufacturer = mfg;
+        expansion.family = null;
+      }
+      renderFormatTree();
+    });
+    mfgDiv.appendChild(mfgBtn);
+
+    if(mfgExpanded){
+      const famList = document.createElement("div");
+      famList.className = "tree-family-list";
+
+      Object.keys(byManufacturer[mfg]).sort().forEach(fam=>{
+        const famExpanded = expansion.family === fam;
+
+        const famDiv = document.createElement("div");
+        famDiv.className = "tree-family" + (famExpanded ? " expanded" : "");
+
+        const famBtn = document.createElement("button");
+        famBtn.className = "tree-family-label";
+        const famCaret = document.createElement("span");
+        famCaret.className = "tree-caret";
+        famCaret.textContent = famExpanded ? "▾" : "▸";
+        famBtn.appendChild(famCaret);
+        famBtn.appendChild(document.createTextNode(fam));
+        famBtn.addEventListener("click", ()=>{
+          expansion.family = (expansion.family === fam) ? null : fam;
+          renderFormatTree();
+        });
+        famDiv.appendChild(famBtn);
+
+        if(famExpanded){
+          byManufacturer[mfg][fam].forEach(f=>{
+            const isActive = f.id === activeFormatId;
+
+            const modeBtn = document.createElement("button");
+            modeBtn.className = "tree-focal-option" + (isActive ? " active" : "");
+            const modeSpan = document.createElement("span");
+            modeSpan.textContent = f.name;
+            modeBtn.appendChild(modeSpan);
+            const dimSpan = document.createElement("span");
+            dimSpan.className = "ana-tag";
+            dimSpan.style.color = "var(--text-dim)";
+            dimSpan.textContent = `${f.width}×${f.height}`;
+            modeBtn.appendChild(dimSpan);
+            modeBtn.addEventListener("click", ()=>{
+              onFormatPicked(formatTreeActiveSide, f.id);
+              closeFormatTree();
+            });
+            famDiv.appendChild(modeBtn);
+          });
+        }
+        famList.appendChild(famDiv);
+      });
+      mfgDiv.appendChild(famList);
+    }
+    formatTreeBody.appendChild(mfgDiv);
+  });
+}
+
+document.getElementById("srcFormatTrigger").addEventListener("click", ()=>openFormatTree("src"));
+document.getElementById("tgtFormatTrigger").addEventListener("click", ()=>openFormatTree("tgt"));
+formatTreeBackdrop.addEventListener("click", (e)=>{
+  if(e.target === formatTreeBackdrop) closeFormatTree();
+});
+document.addEventListener("keydown", (e)=>{
+  if(e.key === "Escape" && !formatTreeBackdrop.classList.contains("hidden")) closeFormatTree();
+});
+
+/* =========================================================
+   TABS
+   ========================================================= */
+document.querySelectorAll(".tab-btn").forEach(btn=>{
+  btn.addEventListener("click", ()=>{
+    document.querySelectorAll(".tab-btn").forEach(b=>b.classList.remove("active"));
+    document.querySelectorAll(".view").forEach(v=>v.classList.remove("active"));
+    btn.classList.add("active");
+    document.getElementById("view-"+btn.dataset.view).classList.add("active");
+    if(btn.dataset.view === "formats" || btn.dataset.view === "lenses") renderLibraryLists();
+  });
+});
+
+/* =========================================================
+   LIBRARY VIEW: LIST RENDERING
+   ========================================================= */
+// Edit mode is off by default on each list — browsing stays clean, and
+// Edit/Delete only appear once explicitly toggled on for that list.
+const libraryEditMode = { formats: false, lenses: false };
+
+function renderLibraryLists(){
+  const fList = document.getElementById("formatList");
+  fList.innerHTML = "";
+  fList.classList.toggle("edit-mode", libraryEditMode.formats);
+  state.formats.forEach(f=>{
+    const row = document.createElement("div");
+    row.className = "entry-row";
+
+    const infoDiv = document.createElement("div");
+    const nameDiv = document.createElement("div");
+    nameDiv.className = "e-name";
+    const fmtTitleLine = [f.manufacturer, f.family].filter(Boolean).join(" ");
+    nameDiv.textContent = fmtTitleLine ? `${fmtTitleLine} — ${f.name}` : f.name;
+    const metaDiv = document.createElement("div");
+    metaDiv.className = "e-meta";
+    metaDiv.textContent = `${f.width}×${f.height}mm · ⌀${diagonal(f).toFixed(2)}mm · ×${cropFactorVsFF(f).toFixed(2)} vs FF${f.notes ? " · "+f.notes : ""}`;
+    infoDiv.appendChild(nameDiv);
+    infoDiv.appendChild(metaDiv);
+
+    const actionsDiv = document.createElement("div");
+    actionsDiv.className = "entry-actions";
+    const editBtn = document.createElement("button");
+    editBtn.className = "small";
+    editBtn.textContent = "Edit";
+    editBtn.addEventListener("click", ()=>openFormatModal(f.id));
+    const delBtn = document.createElement("button");
+    delBtn.className = "small danger";
+    delBtn.textContent = "Delete";
+    delBtn.addEventListener("click", ()=>deleteFormat(f.id));
+    actionsDiv.appendChild(editBtn);
+    actionsDiv.appendChild(delBtn);
+
+    row.appendChild(infoDiv);
+    row.appendChild(actionsDiv);
+    fList.appendChild(row);
+  });
+
+  const lList = document.getElementById("lensList");
+  lList.innerHTML = "";
+  lList.classList.toggle("edit-mode", libraryEditMode.lenses);
+  state.lenses.forEach(l=>{
+    const focalLabel = l.focalMin === l.focalMax ? `${l.focalMin}mm` : `${l.focalMin}-${l.focalMax}mm`;
+    const isAna = l.squeeze && l.squeeze > 1.001;
+    const anaTag = isAna ? ` · ${l.squeeze}x anamorphic` : "";
+    const titleLine = [l.manufacturer, l.family].filter(Boolean).join(" ") || l.name;
+
+    const row = document.createElement("div");
+    row.className = "entry-row";
+
+    const infoDiv = document.createElement("div");
+    const nameDiv = document.createElement("div");
+    nameDiv.className = "e-name";
+    nameDiv.textContent = `${titleLine} — ${focalLabel}`;
+    const metaDiv = document.createElement("div");
+    metaDiv.className = "e-meta";
+    const circleLabel = l.circle != null ? `image circle ⌀${l.circle}mm` : "image circle unknown";
+    const serialLabel = l.serial ? ` · S/N ${l.serial}` : "";
+    metaDiv.textContent = `${circleLabel}${l.nativeFormat ? " · "+l.nativeFormat : ""}${anaTag}${serialLabel}`;
+    infoDiv.appendChild(nameDiv);
+    infoDiv.appendChild(metaDiv);
+
+    const actionsDiv = document.createElement("div");
+    actionsDiv.className = "entry-actions";
+    const editBtn = document.createElement("button");
+    editBtn.className = "small";
+    editBtn.textContent = "Edit";
+    editBtn.addEventListener("click", ()=>openLensModal(l.id));
+    const delBtn = document.createElement("button");
+    delBtn.className = "small danger";
+    delBtn.textContent = "Delete";
+    delBtn.addEventListener("click", ()=>deleteLens(l.id));
+    actionsDiv.appendChild(editBtn);
+    actionsDiv.appendChild(delBtn);
+
+    row.appendChild(infoDiv);
+    row.appendChild(actionsDiv);
+    lList.appendChild(row);
+  });
+}
+
+document.getElementById("formatsEditToggle").addEventListener("click", ()=>{
+  libraryEditMode.formats = !libraryEditMode.formats;
+  document.getElementById("formatsEditToggle").classList.toggle("active", libraryEditMode.formats);
+  document.getElementById("formatsEditToggle").textContent = libraryEditMode.formats ? "Done" : "Edit";
+  renderLibraryLists();
+});
+document.getElementById("lensesEditToggle").addEventListener("click", ()=>{
+  libraryEditMode.lenses = !libraryEditMode.lenses;
+  document.getElementById("lensesEditToggle").classList.toggle("active", libraryEditMode.lenses);
+  document.getElementById("lensesEditToggle").textContent = libraryEditMode.lenses ? "Done" : "Edit";
+  renderLibraryLists();
+});
+
+/* =========================================================
+   LIBRARY VIEW: FORMAT MODAL
+   ========================================================= */
+const formatModalBackdrop = document.getElementById("formatModalBackdrop");
+function openFormatModal(id){
+  document.getElementById("formatModalTitle").textContent = id ? "Edit sensor format" : "Add sensor format";
+  document.getElementById("formatEditId").value = id || "";
+  const f = id ? getFormatById(id) : null;
+  document.getElementById("fmtManufacturer").value = f ? (f.manufacturer||"") : "";
+  document.getElementById("fmtFamily").value = f ? (f.family||"") : "";
+  document.getElementById("fmtName").value = f ? f.name : "";
+  document.getElementById("fmtWidth").value = f ? f.width : "";
+  document.getElementById("fmtHeight").value = f ? f.height : "";
+  document.getElementById("fmtNotes").value = f ? (f.notes||"") : "";
+  formatModalBackdrop.classList.remove("hidden");
+}
+function closeFormatModal(){ formatModalBackdrop.classList.add("hidden"); }
+document.getElementById("btnAddFormat").addEventListener("click", ()=>openFormatModal(null));
+document.getElementById("fmtCancel").addEventListener("click", closeFormatModal);
+document.getElementById("fmtSave").addEventListener("click", ()=>{
+  const id = document.getElementById("formatEditId").value;
+  const manufacturer = document.getElementById("fmtManufacturer").value.trim();
+  const family = document.getElementById("fmtFamily").value.trim();
+  const name = document.getElementById("fmtName").value.trim();
+  const width = parseFloat(document.getElementById("fmtWidth").value);
+  const height = parseFloat(document.getElementById("fmtHeight").value);
+  const notes = document.getElementById("fmtNotes").value.trim();
+  const nameMissing = !name;
+  const widthMissing = isNaN(width);
+  const heightMissing = isNaN(height);
+  if(nameMissing || widthMissing || heightMissing){
+    const missing = [];
+    if(nameMissing) missing.push("mode name");
+    if(widthMissing) missing.push("width");
+    if(heightMissing) missing.push("height");
+    alert(`Please fill in: ${missing.join(", ")}.`);
+    return;
+  }
+  if(id){
+    const f = getFormatById(id);
+    f.manufacturer = manufacturer; f.family = family; f.name = name;
+    f.width = width; f.height = height; f.notes = notes;
+  } else {
+    state.formats.push({ id: "f_"+Date.now(), manufacturer, family, name, width, height, notes });
+  }
+  saveLibrary();
+  renderLibraryLists();
+  refreshAllSelects();
+  recalc();
+  closeFormatModal();
+});
+function deleteFormat(id){
+  if(!confirm("Delete this sensor format?")) return;
+  if(formatSelection.src === id) formatTreeExpansion.src = { manufacturer: null, family: null };
+  if(formatSelection.tgt === id) formatTreeExpansion.tgt = { manufacturer: null, family: null };
+  state.formats = state.formats.filter(f=>f.id!==id);
+  saveLibrary();
+  renderLibraryLists();
+  refreshAllSelects();
+  recalc();
+}
+
+/* =========================================================
+   LIBRARY VIEW: LENS MODAL
+   ========================================================= */
+const lensModalBackdrop = document.getElementById("lensModalBackdrop");
+function openLensModal(id){
+  document.getElementById("lensModalTitle").textContent = id ? "Edit lens" : "Add lens";
+  document.getElementById("lensEditId").value = id || "";
+  const l = id ? getLensById(id) : null;
+  document.getElementById("lensManufacturer").value = l ? (l.manufacturer||"") : "";
+  document.getElementById("lensFamily").value = l ? (l.family||"") : "";
+  document.getElementById("lensName").value = l ? l.name : "";
+  document.getElementById("lensFocalMin").value = l ? l.focalMin : "";
+  document.getElementById("lensFocalMax").value = l ? l.focalMax : "";
+  document.getElementById("lensCircle").value = (l && l.circle != null) ? l.circle : "";
+  document.getElementById("lensNativeFormat").value = l ? (l.nativeFormat||"") : "";
+  document.getElementById("lensSerial").value = l ? (l.serial||"") : "";
+  document.getElementById("lensSqueeze").value = l ? (l.squeeze||1.0) : 1.0;
+  lensModalBackdrop.classList.remove("hidden");
+}
+function closeLensModal(){ lensModalBackdrop.classList.add("hidden"); }
+document.getElementById("btnAddLens").addEventListener("click", ()=>openLensModal(null));
+document.getElementById("lensCancel").addEventListener("click", closeLensModal);
+document.getElementById("lensSave").addEventListener("click", ()=>{
+  const id = document.getElementById("lensEditId").value;
+  const manufacturer = document.getElementById("lensManufacturer").value.trim();
+  const family = document.getElementById("lensFamily").value.trim();
+  const name = document.getElementById("lensName").value.trim();
+  const focalMin = parseFloat(document.getElementById("lensFocalMin").value);
+  let focalMax = parseFloat(document.getElementById("lensFocalMax").value);
+  // Image circle is optional — not every lens has a known/published spec,
+  // and forcing a guessed number would produce a confident-looking but
+  // fabricated coverage verdict, which is worse than no verdict at all.
+  // Stored as null (not NaN) when blank so every downstream check that
+  // already guards with `if(lens.circle)` correctly skips it.
+  const circleRaw = document.getElementById("lensCircle").value.trim();
+  const circle = circleRaw === "" ? null : parseFloat(circleRaw);
+  const nativeFormat = document.getElementById("lensNativeFormat").value.trim();
+  const serial = document.getElementById("lensSerial").value.trim();
+  const squeeze = parseFloat(document.getElementById("lensSqueeze").value) || 1.0;
+  const nameMissing = !name;
+  const focalMinMissing = isNaN(focalMin);
+  const circleInvalid = circle !== null && isNaN(circle);
+  if(nameMissing || focalMinMissing || circleInvalid){
+    const missing = [];
+    if(nameMissing) missing.push("focal label");
+    if(focalMinMissing) missing.push("min focal");
+    if(circleInvalid) missing.push("image circle (enter a number, or leave blank if unknown)");
+    alert(`Please fill in: ${missing.join(", ")}.`);
+    return;
+  }
+  if(isNaN(focalMax)) focalMax = focalMin;
+  if(id){
+    const l = getLensById(id);
+    l.manufacturer = manufacturer; l.family = family; l.name = name;
+    l.focalMin = focalMin; l.focalMax = focalMax; l.circle = circle;
+    l.nativeFormat = nativeFormat; l.serial = serial; l.squeeze = squeeze;
+  } else {
+    state.lenses.push({ id: "l_"+Date.now(), manufacturer, family, name, focalMin, focalMax, circle, nativeFormat, serial, squeeze });
+  }
+  saveLibrary();
+  renderLibraryLists();
+  refreshAllSelects();
+  recalc();
+  closeLensModal();
+});
+function deleteLens(id){
+  if(!confirm("Delete this lens?")) return;
+  if(lensSelection.src === id){ onLensPicked("src", ""); treeExpansion.src = { manufacturer: null, family: null }; }
+  if(lensSelection.tgt === id){ onLensPicked("tgt", ""); treeExpansion.tgt = { manufacturer: null, family: null }; }
+  state.lenses = state.lenses.filter(l=>l.id!==id);
+  saveLibrary();
+  renderLibraryLists();
+  refreshAllSelects();
+  recalc();
+}
+
+/* =========================================================
+   IMPORT / EXPORT
+   ========================================================= */
+function downloadBlob(filename, content, mime){
+  const blob = new Blob([content], { type: mime });
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement("a");
+  a.href = url; a.download = filename;
+  document.body.appendChild(a); a.click();
+  document.body.removeChild(a);
+  URL.revokeObjectURL(url);
+}
+
+document.getElementById("btnExportJson").addEventListener("click", ()=>{
+  const payload = { formats: state.formats, lenses: state.lenses, exportedAt: new Date().toISOString() };
+  downloadBlob("focal-library.json", JSON.stringify(payload, null, 2), "application/json");
+});
+
+function toCsv(rows, headers){
+  const esc = v => `"${String(v).replace(/"/g,'""')}"`;
+  const lines = [headers.join(",")];
+  rows.forEach(r=> lines.push(headers.map(h=>esc(r[h] ?? "")).join(",")));
+  return lines.join("\n");
+}
+
+document.getElementById("btnExportCsv").addEventListener("click", ()=>{
+  const fmtCsv = toCsv(state.formats, ["id","manufacturer","family","name","width","height","notes"]);
+  const lensCsv = toCsv(state.lenses, ["id","manufacturer","family","name","focalMin","focalMax","circle","nativeFormat","serial","squeeze"]);
+  downloadBlob("focal-formats.csv", fmtCsv, "text/csv");
+  setTimeout(()=> downloadBlob("focal-lenses.csv", lensCsv, "text/csv"), 150);
+});
+
+function parseCsv(text){
+  const lines = text.trim().split(/\r?\n/);
+  const headers = lines[0].split(",").map(h=>h.replace(/^"|"$/g,""));
+  return lines.slice(1).filter(l=>l.trim()).map(line=>{
+    // simple CSV parse respecting quoted commas
+    const vals = [];
+    let cur = "", inQuotes = false;
+    for(let i=0;i<line.length;i++){
+      const c = line[i];
+      if(c === '"'){
+        if(inQuotes && line[i+1] === '"'){ cur+='"'; i++; }
+        else inQuotes = !inQuotes;
+      } else if(c === ',' && !inQuotes){
+        vals.push(cur); cur = "";
+      } else { cur += c; }
+    }
+    vals.push(cur);
+    const obj = {};
+    headers.forEach((h,i)=> obj[h] = vals[i]);
+    return obj;
+  });
+}
+
+function mergeByName(existing, incoming, idPrefix){
+  incoming.forEach(item=>{
+    const match = existing.find(e=> e.name.toLowerCase() === String(item.name).toLowerCase());
+    if(match){
+      Object.assign(match, item);
+    } else {
+      item.id = idPrefix + Date.now() + Math.floor(Math.random()*1000);
+      existing.push(item);
+    }
+  });
+}
+
+document.getElementById("btnImportTrigger").addEventListener("click", ()=>{
+  document.getElementById("importFile").click();
+});
+document.getElementById("importFile").addEventListener("change", (e)=>{
+  const file = e.target.files[0];
+  if(!file) return;
+  const reader = new FileReader();
+  reader.onload = (ev)=>{
+    try{
+      const text = ev.target.result;
+      if(file.name.endsWith(".json")){
+        const payload = JSON.parse(text);
+        if(payload.formats) mergeByName(state.formats, payload.formats, "f_");
+        if(payload.lenses) mergeByName(state.lenses, payload.lenses, "l_");
+      } else if(file.name.endsWith(".csv")){
+        const rows = parseCsv(text);
+        if(rows.length && "width" in rows[0]){
+          rows.forEach(r=>{ r.width = parseFloat(r.width); r.height = parseFloat(r.height); });
+          mergeByName(state.formats, rows, "f_");
+        } else if(rows.length && "circle" in rows[0]){
+          rows.forEach(r=>{
+            r.focalMin = parseFloat(r.focalMin);
+            r.focalMax = parseFloat(r.focalMax);
+            const parsedCircle = parseFloat(r.circle);
+            r.circle = isNaN(parsedCircle) ? null : parsedCircle;
+            r.squeeze = parseFloat(r.squeeze)||1.0;
+          });
+          mergeByName(state.lenses, rows, "l_");
+        }
+      }
+      saveLibrary();
+      renderLibraryLists();
+      refreshAllSelects();
+      recalc();
+      alert("Import complete.");
+    }catch(err){
+      alert("Import failed: " + err.message);
+    }
+  };
+  reader.readAsText(file);
+  e.target.value = "";
+});
+
+document.getElementById("btnResetLibrary").addEventListener("click", ()=>{
+  if(!confirm("Reset formats and lenses to factory defaults? This cannot be undone.")) return;
+  state.formats = structuredClone(DEFAULT_FORMATS);
+  state.lenses = structuredClone(DEFAULT_LENSES);
+  lensSelection.src = ""; lensSelection.tgt = "";
+  formatSelection.src = ""; formatSelection.tgt = "";
+  treeExpansion.src = { manufacturer: null, family: null };
+  treeExpansion.tgt = { manufacturer: null, family: null };
+  formatTreeExpansion.src = { manufacturer: null, family: null };
+  formatTreeExpansion.tgt = { manufacturer: null, family: null };
+  setSqueezeControl("src", 1.0); setSqueezeControl("tgt", 1.0);
+  saveLibrary();
+  renderLibraryLists();
+  refreshAllSelects();
+  recalc();
+});
+
+/* =========================================================
+   INIT
+   ========================================================= */
+refreshAllSelects();
+recalc();
+</script>
+</body>
+</html>
