@@ -676,6 +676,47 @@
     color: var(--text);
   }
 
+  .drag-hint{
+    font-family: var(--mono);
+    font-size: 11px;
+    color: var(--text-dim);
+    margin: 0 0 12px 0;
+  }
+
+  .format-group-block{
+    margin-bottom: 18px;
+  }
+  .format-group-header{
+    font-family: var(--mono);
+    font-size: 11px;
+    letter-spacing: 1px;
+    color: var(--accent);
+    text-transform: uppercase;
+    margin-bottom: 8px;
+  }
+  .format-group-header .fam-name{
+    color: var(--text-dim);
+    text-transform: none;
+    letter-spacing: 0;
+    font-weight: 400;
+  }
+  .format-group-grid{
+    display:grid;
+    grid-template-columns: repeat(auto-fill, minmax(280px, 1fr));
+    gap: 10px;
+  }
+
+  .entry-row[draggable="true"]{
+    cursor: grab;
+  }
+  .entry-row.dragging{
+    opacity: 0.4;
+  }
+  .entry-row.drag-over{
+    border-color: var(--accent);
+    border-style: dashed;
+  }
+
   .entry-row-checkbox{
     display:none;
     margin-right: 10px;
@@ -757,7 +798,7 @@
     <div class="brand">
       <h1><span class="ring">◐</span> FOCAL</h1>
       <span class="tag">LENS / FORMAT MATCHER</span>
-      <span class="version-badge" id="versionBadge">v1.0</span>
+      <span class="version-badge" id="versionBadge">v1.1</span>
     </div>
     <div class="tabs">
       <button class="tab-btn active" data-view="calc">CALCULATOR</button>
@@ -897,6 +938,7 @@
   <div class="view" id="view-formats">
     <div class="lib-toolbar">
       <p class="panel-label" style="margin:0; flex:1;">Sensor formats</p>
+      <button class="small" id="formatsSortToggle">A–Z</button>
       <button class="small" id="formatsEditToggle">Edit</button>
       <button class="small" id="btnAddFormat">+ Add format</button>
     </div>
@@ -904,6 +946,7 @@
       <span id="formatsBulkCount">0 selected</span>
       <button class="small danger" id="formatsBulkDelete">Delete selected</button>
     </div>
+    <p class="drag-hint hidden" id="formatsDragHint">Drag modes within a family to reorder. Manufacturer and family grouping is always alphabetical.</p>
     <div class="entry-list wide" id="formatList"></div>
 
     <div class="panel" style="margin-top:22px;">
@@ -1253,6 +1296,42 @@ function refreshAllSelects(){
    CALCULATION + RENDER
    ========================================================= */
 function getFormatById(id){ return state.formats.find(f=>f.id===id); }
+
+/* Mode-level ordering within a family. Manufacturer and family grouping
+   are always alphabetical (per the agreed scope) — only the individual
+   mode entries inside a family can be reordered, either via the
+   alphabetical toggle or by dragging in the Library tab list. Both the
+   Library tab and the tree dropdown call this same function so they can
+   never drift out of sync with each other. */
+let formatModeSortMode = "custom"; // "custom" | "alphabetical"
+
+function sortModesInFamily(formats){
+  if(formatModeSortMode === "alphabetical"){
+    return [...formats].sort((a,b)=> a.name.localeCompare(b.name));
+  }
+  // Custom order: by explicit `order` field when present, falling back to
+  // array position for formats saved before this field existed (keeps old
+  // saved libraries displaying in their existing order rather than
+  // jumbling on first load after this update).
+  return [...formats].sort((a,b)=>{
+    const orderA = a.order != null ? a.order : state.formats.indexOf(a);
+    const orderB = b.order != null ? b.order : state.formats.indexOf(b);
+    return orderA - orderB;
+  });
+}
+
+/* Reassigns sequential `order` values to every format within one
+   manufacturer+family group, based on the array order passed in. Called
+   after a drag-and-drop reorder. Formats outside this family are
+   untouched, so order values are only ever meaningful within their own
+   family group, never compared across families. */
+function reorderFamilyModes(manufacturer, family, orderedIds){
+  orderedIds.forEach((id, index)=>{
+    const fmt = getFormatById(id);
+    if(fmt) fmt.order = index;
+  });
+  saveLibrary();
+}
 function getLensById(id){ return state.lenses.find(l=>l.id===id); }
 
 function getSqueezeValue(side){
@@ -1901,7 +1980,7 @@ function renderFormatTree(){
         famDiv.appendChild(famBtn);
 
         if(famExpanded){
-          byManufacturer[mfg][fam].forEach(f=>{
+          sortModesInFamily(byManufacturer[mfg][fam]).forEach(f=>{
             const isActive = f.id === activeFormatId;
 
             const modeBtn = document.createElement("button");
@@ -1977,49 +2056,123 @@ function renderLibraryLists(){
   const fList = document.getElementById("formatList");
   fList.innerHTML = "";
   fList.classList.toggle("edit-mode", libraryEditMode.formats);
+  document.getElementById("formatsDragHint").classList.toggle("hidden", !libraryEditMode.formats);
+
+  // Group by manufacturer -> family, alphabetically (grouping levels are
+  // always alphabetical per the agreed scope — only the modes inside each
+  // family group can be reordered).
+  const byManufacturer = {};
   state.formats.forEach(f=>{
-    const row = document.createElement("div");
-    row.className = "entry-row" + (librarySelection.formats.has(f.id) ? " row-selected" : "");
+    const mfg = f.manufacturer || "Other";
+    const fam = f.family || f.name;
+    byManufacturer[mfg] = byManufacturer[mfg] || {};
+    byManufacturer[mfg][fam] = byManufacturer[mfg][fam] || [];
+    byManufacturer[mfg][fam].push(f);
+  });
 
-    const checkbox = document.createElement("input");
-    checkbox.type = "checkbox";
-    checkbox.className = "entry-row-checkbox";
-    checkbox.checked = librarySelection.formats.has(f.id);
-    checkbox.addEventListener("change", ()=>{
-      if(checkbox.checked) librarySelection.formats.add(f.id);
-      else librarySelection.formats.delete(f.id);
-      row.classList.toggle("row-selected", checkbox.checked);
-      updateBulkBar("formats");
+  let dragSrcId = null;
+
+  Object.keys(byManufacturer).sort().forEach(mfg=>{
+    Object.keys(byManufacturer[mfg]).sort().forEach(fam=>{
+      const groupBlock = document.createElement("div");
+      groupBlock.className = "format-group-block";
+
+      const header = document.createElement("div");
+      header.className = "format-group-header";
+      header.innerHTML = `${mfg} <span class="fam-name">${fam}</span>`;
+      groupBlock.appendChild(header);
+
+      const grid = document.createElement("div");
+      grid.className = "format-group-grid";
+
+      const modesInFamily = sortModesInFamily(byManufacturer[mfg][fam]);
+
+      modesInFamily.forEach(f=>{
+        const row = document.createElement("div");
+        row.className = "entry-row" + (librarySelection.formats.has(f.id) ? " row-selected" : "");
+        // Dragging only makes sense as a custom-order action — disabled
+        // while sorted alphabetically, since dragging wouldn't persist
+        // anything meaningful until switched back to custom order.
+        const draggable = libraryEditMode.formats && formatModeSortMode === "custom" && modesInFamily.length > 1;
+        row.draggable = draggable;
+
+        if(draggable){
+          row.addEventListener("dragstart", (e)=>{
+            dragSrcId = f.id;
+            row.classList.add("dragging");
+            e.dataTransfer.effectAllowed = "move";
+          });
+          row.addEventListener("dragend", ()=>{
+            row.classList.remove("dragging");
+          });
+          row.addEventListener("dragover", (e)=>{
+            e.preventDefault();
+            row.classList.add("drag-over");
+          });
+          row.addEventListener("dragleave", ()=>{
+            row.classList.remove("drag-over");
+          });
+          row.addEventListener("drop", (e)=>{
+            e.preventDefault();
+            row.classList.remove("drag-over");
+            if(!dragSrcId || dragSrcId === f.id) return;
+            // Reorder within this family's current display order, moving
+            // the dragged item to just before the drop target.
+            const ids = modesInFamily.map(m=>m.id);
+            const fromIdx = ids.indexOf(dragSrcId);
+            const toIdx = ids.indexOf(f.id);
+            if(fromIdx === -1 || toIdx === -1) return;
+            ids.splice(fromIdx, 1);
+            ids.splice(ids.indexOf(f.id), 0, dragSrcId);
+            reorderFamilyModes(mfg, fam, ids);
+            renderLibraryLists();
+            refreshAllSelects();
+          });
+        }
+
+        const checkbox = document.createElement("input");
+        checkbox.type = "checkbox";
+        checkbox.className = "entry-row-checkbox";
+        checkbox.checked = librarySelection.formats.has(f.id);
+        checkbox.addEventListener("change", ()=>{
+          if(checkbox.checked) librarySelection.formats.add(f.id);
+          else librarySelection.formats.delete(f.id);
+          row.classList.toggle("row-selected", checkbox.checked);
+          updateBulkBar("formats");
+        });
+
+        const infoDiv = document.createElement("div");
+        const nameDiv = document.createElement("div");
+        nameDiv.className = "e-name";
+        nameDiv.textContent = (draggable ? "⠿ " : "") + f.name;
+        const metaDiv = document.createElement("div");
+        metaDiv.className = "e-meta";
+        metaDiv.textContent = `${f.width}×${f.height}mm · ⌀${diagonal(f).toFixed(2)}mm · ×${cropFactorVsFF(f).toFixed(2)} vs FF${f.notes ? " · "+f.notes : ""}`;
+        infoDiv.appendChild(nameDiv);
+        infoDiv.appendChild(metaDiv);
+
+        const actionsDiv = document.createElement("div");
+        actionsDiv.className = "entry-actions";
+        const editBtn = document.createElement("button");
+        editBtn.className = "small";
+        editBtn.textContent = "Edit";
+        editBtn.addEventListener("click", ()=>openFormatModal(f.id));
+        const delBtn = document.createElement("button");
+        delBtn.className = "small danger";
+        delBtn.textContent = "Delete";
+        delBtn.addEventListener("click", ()=>deleteFormat(f.id));
+        actionsDiv.appendChild(editBtn);
+        actionsDiv.appendChild(delBtn);
+
+        row.appendChild(checkbox);
+        row.appendChild(infoDiv);
+        row.appendChild(actionsDiv);
+        grid.appendChild(row);
+      });
+
+      groupBlock.appendChild(grid);
+      fList.appendChild(groupBlock);
     });
-
-    const infoDiv = document.createElement("div");
-    const nameDiv = document.createElement("div");
-    nameDiv.className = "e-name";
-    const fmtTitleLine = [f.manufacturer, f.family].filter(Boolean).join(" ");
-    nameDiv.textContent = fmtTitleLine ? `${fmtTitleLine} — ${f.name}` : f.name;
-    const metaDiv = document.createElement("div");
-    metaDiv.className = "e-meta";
-    metaDiv.textContent = `${f.width}×${f.height}mm · ⌀${diagonal(f).toFixed(2)}mm · ×${cropFactorVsFF(f).toFixed(2)} vs FF${f.notes ? " · "+f.notes : ""}`;
-    infoDiv.appendChild(nameDiv);
-    infoDiv.appendChild(metaDiv);
-
-    const actionsDiv = document.createElement("div");
-    actionsDiv.className = "entry-actions";
-    const editBtn = document.createElement("button");
-    editBtn.className = "small";
-    editBtn.textContent = "Edit";
-    editBtn.addEventListener("click", ()=>openFormatModal(f.id));
-    const delBtn = document.createElement("button");
-    delBtn.className = "small danger";
-    delBtn.textContent = "Delete";
-    delBtn.addEventListener("click", ()=>deleteFormat(f.id));
-    actionsDiv.appendChild(editBtn);
-    actionsDiv.appendChild(delBtn);
-
-    row.appendChild(checkbox);
-    row.appendChild(infoDiv);
-    row.appendChild(actionsDiv);
-    fList.appendChild(row);
   });
 
   const lList = document.getElementById("lensList");
@@ -2085,6 +2238,12 @@ document.getElementById("formatsEditToggle").addEventListener("click", ()=>{
   document.getElementById("formatsEditToggle").classList.toggle("active", libraryEditMode.formats);
   document.getElementById("formatsEditToggle").textContent = libraryEditMode.formats ? "Done" : "Edit";
   if(!libraryEditMode.formats) librarySelection.formats.clear(); // exiting edit mode clears selections
+  renderLibraryLists();
+});
+document.getElementById("formatsSortToggle").addEventListener("click", ()=>{
+  formatModeSortMode = formatModeSortMode === "custom" ? "alphabetical" : "custom";
+  document.getElementById("formatsSortToggle").classList.toggle("active", formatModeSortMode === "alphabetical");
+  document.getElementById("formatsSortToggle").textContent = formatModeSortMode === "alphabetical" ? "Custom" : "A–Z";
   renderLibraryLists();
 });
 document.getElementById("lensesEditToggle").addEventListener("click", ()=>{
