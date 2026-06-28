@@ -64,6 +64,15 @@
     font-family: var(--mono);
     letter-spacing: 0.5px;
   }
+  .version-badge{
+    color: var(--text-dim);
+    font-size: 11px;
+    font-family: var(--mono);
+    letter-spacing: 0.5px;
+    border: 1px solid var(--divider);
+    border-radius: 3px;
+    padding: 2px 6px;
+  }
   .tabs{
     display:flex;
     gap: 4px;
@@ -175,6 +184,35 @@
     color: var(--accent);
     min-width: 64px;
     text-align:right;
+  }
+
+  /* ---------- QUICK-TAP FOCAL CHIPS ---------- */
+  .quick-focal-row{
+    display:flex;
+    gap: 6px;
+    margin-top: 10px;
+    flex-wrap: wrap;
+  }
+  .quick-focal-chip{
+    font-family: var(--mono);
+    font-size: 12px;
+    color: var(--text-dim);
+    background: var(--panel-raised);
+    border: 1px solid var(--divider);
+    border-radius: 999px;
+    padding: 5px 12px;
+    cursor:pointer;
+    transition: all .15s ease;
+  }
+  .quick-focal-chip:hover{
+    border-color: var(--text-dim);
+    color: var(--text);
+  }
+  .quick-focal-chip.active{
+    color: var(--accent);
+    border-color: var(--accent-dim);
+    background: rgba(255,107,26,0.1);
+    font-weight: 600;
   }
 
   /* ---------- LENS TREE DROPDOWN ---------- */
@@ -624,6 +662,37 @@
     background: rgba(255,107,26,0.07);
   }
 
+  .bulk-action-bar{
+    display:flex;
+    align-items:center;
+    gap: 14px;
+    background: rgba(255,107,26,0.06);
+    border: 1px solid var(--accent-dim);
+    border-radius: 6px;
+    padding: 10px 14px;
+    margin-bottom: 12px;
+    font-family: var(--mono);
+    font-size: 13px;
+    color: var(--text);
+  }
+
+  .entry-row-checkbox{
+    display:none;
+    margin-right: 10px;
+    margin-top: 2px;
+    width: 16px;
+    height: 16px;
+    flex-shrink: 0;
+    accent-color: var(--accent);
+    cursor: pointer;
+  }
+  .entry-list.edit-mode .entry-row-checkbox{ display:block; }
+  .entry-row{ align-items:flex-start; }
+  .entry-row.row-selected{
+    border-color: var(--accent);
+    background: rgba(255,107,26,0.05);
+  }
+
   .form-grid{
     display:grid;
     grid-template-columns: 1fr 1fr;
@@ -688,6 +757,7 @@
     <div class="brand">
       <h1><span class="ring">◐</span> FOCAL</h1>
       <span class="tag">LENS / FORMAT MATCHER</span>
+      <span class="version-badge" id="versionBadge">v1.0</span>
     </div>
     <div class="tabs">
       <button class="tab-btn active" data-view="calc">CALCULATOR</button>
@@ -718,6 +788,7 @@
               <input type="range" id="srcFocal" min="6" max="300" step="1" value="35">
               <span class="focal-readout" id="srcFocalReadout">35mm</span>
             </div>
+            <div class="quick-focal-row" id="quickFocalRow"></div>
           </div>
           <div class="field">
             <label for="srcSqueeze">Anamorphic squeeze</label>
@@ -829,6 +900,10 @@
       <button class="small" id="formatsEditToggle">Edit</button>
       <button class="small" id="btnAddFormat">+ Add format</button>
     </div>
+    <div class="bulk-action-bar hidden" id="formatsBulkBar">
+      <span id="formatsBulkCount">0 selected</span>
+      <button class="small danger" id="formatsBulkDelete">Delete selected</button>
+    </div>
     <div class="entry-list wide" id="formatList"></div>
 
     <div class="panel" style="margin-top:22px;">
@@ -854,6 +929,10 @@
       <p class="panel-label" style="margin:0; flex:1;">Lenses</p>
       <button class="small" id="lensesEditToggle">Edit</button>
       <button class="small" id="btnAddLens">+ Add lens</button>
+    </div>
+    <div class="bulk-action-bar hidden" id="lensesBulkBar">
+      <span id="lensesBulkCount">0 selected</span>
+      <button class="small danger" id="lensesBulkDelete">Delete selected</button>
     </div>
     <div class="entry-list wide" id="lensList"></div>
   </div>
@@ -984,30 +1063,10 @@ const FF_DIAGONAL = Math.sqrt(36*36 + 24*24); // 43.266... mm reference
 
 const DEFAULT_FORMATS = [
   { id: "ff",        name: "Full Frame (36×24)",                 manufacturer: "Generic", family: "Full Frame",  width: 36.0,  height: 24.0,  notes: "Sony Venice 2 FF, Alexa 35 (open gate large format)" },
-  { id: "venice_86k_ff", name: "8.6K 3:2 Full Frame",            manufacturer: "Sony",    family: "Venice 2",    width: 35.9,  height: 24.0,  notes: "_custom_sony" },
-  { id: "s35_4perf", name: "Super35 — 4-perf (24.89×18.66)",     manufacturer: "Generic", family: "Super35",     width: 24.89, height: 18.66, notes: "Classic S35 cine, e.g. Alexa Mini LF S35 crop" },
-  { id: "s35_3perf", name: "Super35 — 3-perf (24.89×14.0)",      manufacturer: "Generic", family: "Super35",     width: 24.89, height: 14.0,  notes: "16:9 cine crop" },
-  { id: "alexa35_4x3", name: "S35 4:3 (28.0×20.22)",             manufacturer: "ARRI",    family: "Alexa 35",    width: 28.0,  height: 20.22, notes: "ARRI Alexa 35, open gate S35+" },
-  { id: "venice_s35", name: "S35 mode (24.3×12.8)",              manufacturer: "Sony",    family: "Venice 2",    width: 24.3,  height: 12.8,  notes: "Venice 2 in S35 crop, 6K 3:2 / 17:9" },
-  { id: "red_s35",   name: "S35 (24.6×13.8)",                    manufacturer: "RED",     family: "Komodo",      width: 24.6,  height: 13.8,  notes: "RED S35-class sensors vary slightly by camera — check yours" },
-  { id: "m43",        name: "Micro Four Thirds (17.3×13.0)",      manufacturer: "Generic", family: "M4/3",        width: 17.3,  height: 13.0,  notes: "Panasonic, BMPCC 4K" },
-  { id: "bmpcc6k",     name: "6K Pro (23.10×12.99)",               manufacturer: "Blackmagic", family: "Pocket Cinema", width: 23.10, height: 12.99, notes: "BMPCC 6K Pro" },
 ];
 
 const DEFAULT_LENSES = [
   { id: "l1", name: "35mm",  manufacturer: "ARRI",  family: "Signature Prime",   focalMin: 35, focalMax: 35, circle: 46.5, nativeFormat: "Full Frame", squeeze: 1.0 },
-  { id: "l2", name: "35mm",  manufacturer: "Zeiss", family: "Supreme Prime",     focalMin: 35, focalMax: 35, circle: 46.5, nativeFormat: "Full Frame", squeeze: 1.0 },
-  { id: "l2b", name: "25mm", manufacturer: "Zeiss", family: "Supreme Prime",    focalMin: 25, focalMax: 25, circle: 46.5, nativeFormat: "Full Frame", squeeze: 1.0 },
-  { id: "l2c", name: "29mm", manufacturer: "Zeiss", family: "Supreme Prime",    focalMin: 29, focalMax: 29, circle: 46.5, nativeFormat: "Full Frame", squeeze: 1.0 },
-  { id: "l2d", name: "50mm", manufacturer: "Zeiss", family: "Supreme Prime",    focalMin: 50, focalMax: 50, circle: 46.5, nativeFormat: "Full Frame", squeeze: 1.0 },
-  { id: "l3", name: "32mm",  manufacturer: "Cooke", family: "S4/i",              focalMin: 32, focalMax: 32, circle: 31.5, nativeFormat: "Super35",    squeeze: 1.0 },
-  { id: "l3b", name: "75mm", manufacturer: "Cooke", family: "S4/i",              focalMin: 75, focalMax: 75, circle: 31.5, nativeFormat: "Super35",    squeeze: 1.0 },
-  { id: "l4", name: "35mm",  manufacturer: "Canon", family: "CN-E Cinema Prime", focalMin: 35, focalMax: 35, circle: 31.1, nativeFormat: "Super35",    squeeze: 1.0 },
-  { id: "l5", name: "18-35mm", manufacturer: "Sigma", family: "Cine Zoom T2",    focalMin: 18, focalMax: 35, circle: 31.5, nativeFormat: "Super35",    squeeze: 1.0 },
-  { id: "l6", name: "12-35mm", manufacturer: "Panasonic", family: "Leica Zoom",  focalMin: 12, focalMax: 35, circle: 22.0, nativeFormat: "M4/3",       squeeze: 1.0 },
-  { id: "l7", name: "50mm",  manufacturer: "Hawk",  family: "V-Lite 1.3x",       focalMin: 50, focalMax: 50, circle: 36.5, nativeFormat: "Super35",    squeeze: 1.3 },
-  { id: "l8", name: "50mm",  manufacturer: "Cooke", family: "Anamorphic/i 1.8x", focalMin: 50, focalMax: 50, circle: 40.0, nativeFormat: "Full Frame", squeeze: 1.8 },
-  { id: "l9", name: "75mm",  manufacturer: "Atlas", family: "Orion 2x",          focalMin: 75, focalMax: 75, circle: 31.5, nativeFormat: "Super35",    squeeze: 2.0 },
 ];
 
 function loadLibrary(){
@@ -1269,7 +1328,22 @@ function recalc(){
   const srcSqueeze = getSqueezeValue("src");
   const tgtSqueeze = getSqueezeValue("tgt");
 
-  if(!srcFmt || !tgtFmt){ return; }
+  if(!srcFmt || !tgtFmt){
+    // No format available at all (e.g. the library was bulk-deleted down to
+    // zero) — say so clearly instead of leaving the previous calculation's
+    // numbers frozen on screen looking current when they aren't.
+    document.getElementById("rcFocal").textContent = "—";
+    document.getElementById("rcFocalSub").textContent = "Add a sensor format in the Formats tab to begin.";
+    document.getElementById("rcCrop").textContent = "—";
+    document.getElementById("rcCropSub").textContent = "";
+    document.getElementById("coverageBanner").style.display = "none";
+    document.getElementById("vMismatchNote").style.display = "none";
+    document.getElementById("diagramHost").innerHTML = "";
+    document.getElementById("detailTableBody").innerHTML = "";
+    document.getElementById("nearestFocalScope").textContent = "";
+    document.getElementById("nearestFocalRow").innerHTML = "";
+    return;
+  }
 
   updateSqueezeBadge("src");
   updateSqueezeBadge("tgt");
@@ -1341,6 +1415,7 @@ function recalc(){
   renderDiagram(srcFmt, tgtFmt, srcFocal, eqFocal, srcSqueeze, tgtSqueeze);
   renderDetailTable(srcFmt, tgtFmt, srcFocal, eqFocal, crop, srcSqueeze, tgtSqueeze);
   renderNearestFocal(eqFocal, tgtLens);
+  renderQuickFocalChips(srcFocal, srcLens);
 }
 
 function renderDetailTable(srcFmt, tgtFmt, srcFocal, eqFocal, crop, srcSqueeze, tgtSqueeze){
@@ -1409,6 +1484,51 @@ function renderNearestFocal(eqFocal, tgtLens){
     <div class="nf-arrow">target<span class="nf-target-value">${eqFocal.toFixed(1)}mm</span></div>
     ${cardFor(above, "above")}
   `;
+}
+
+/* Quick-tap focal chips under the source slider — same underlying data
+   source as the nearest-available-focal lookup (family-scoped if a source
+   lens is selected, otherwise the standard ladder), but scoped to SOURCE
+   since that's the side the slider actually controls. Shows a window of
+   values centered on the current slider position rather than the whole
+   list, so it stays usable as a quick-tap row instead of a wall of chips. */
+function renderQuickFocalChips(currentFocal, srcLens){
+  const rowEl = document.getElementById("quickFocalRow");
+
+  const candidates = srcLens ? getFamilyFocals(srcLens) : STANDARD_FOCAL_LADDER;
+  const sorted = [...new Set(candidates)].sort((a,b)=>a-b);
+
+  if(sorted.length === 0){
+    rowEl.innerHTML = "";
+    return;
+  }
+
+  // Find index of nearest value to current focal, then take a window of
+  // up to 3 below and 3 above it (7 total) so the row stays centered on
+  // wherever the slider currently is, not just the start of the list.
+  let nearestIdx = 0;
+  let smallestDiff = Infinity;
+  sorted.forEach((v,i)=>{
+    const diff = Math.abs(v - currentFocal);
+    if(diff < smallestDiff){ smallestDiff = diff; nearestIdx = i; }
+  });
+  const windowStart = Math.max(0, nearestIdx - 3);
+  const windowEnd = Math.min(sorted.length, windowStart + 7);
+  const windowed = sorted.slice(windowStart, windowEnd);
+
+  rowEl.innerHTML = "";
+  windowed.forEach(v=>{
+    const chip = document.createElement("button");
+    chip.type = "button";
+    chip.className = "quick-focal-chip" + (v === currentFocal ? " active" : "");
+    chip.textContent = `${v}mm`;
+    chip.addEventListener("click", ()=>{
+      srcFocalSlider.value = v;
+      srcFocalReadout.textContent = v + "mm";
+      recalc();
+    });
+    rowEl.appendChild(chip);
+  });
 }
 
 /* To-scale sensor outline overlay, centered on a shared optical axis,
@@ -1837,6 +1957,21 @@ document.querySelectorAll(".tab-btn").forEach(btn=>{
 // Edit mode is off by default on each list — browsing stays clean, and
 // Edit/Delete only appear once explicitly toggled on for that list.
 const libraryEditMode = { formats: false, lenses: false };
+// Bulk-selection state for multi-delete, tracked separately per list.
+// Cleared whenever edit mode is toggled off, per the agreed behavior.
+const librarySelection = { formats: new Set(), lenses: new Set() };
+
+function updateBulkBar(kind){
+  const selection = librarySelection[kind];
+  const bar = document.getElementById(kind === "formats" ? "formatsBulkBar" : "lensesBulkBar");
+  const countEl = document.getElementById(kind === "formats" ? "formatsBulkCount" : "lensesBulkCount");
+  if(selection.size > 0){
+    bar.classList.remove("hidden");
+    countEl.textContent = `${selection.size} selected`;
+  } else {
+    bar.classList.add("hidden");
+  }
+}
 
 function renderLibraryLists(){
   const fList = document.getElementById("formatList");
@@ -1844,7 +1979,18 @@ function renderLibraryLists(){
   fList.classList.toggle("edit-mode", libraryEditMode.formats);
   state.formats.forEach(f=>{
     const row = document.createElement("div");
-    row.className = "entry-row";
+    row.className = "entry-row" + (librarySelection.formats.has(f.id) ? " row-selected" : "");
+
+    const checkbox = document.createElement("input");
+    checkbox.type = "checkbox";
+    checkbox.className = "entry-row-checkbox";
+    checkbox.checked = librarySelection.formats.has(f.id);
+    checkbox.addEventListener("change", ()=>{
+      if(checkbox.checked) librarySelection.formats.add(f.id);
+      else librarySelection.formats.delete(f.id);
+      row.classList.toggle("row-selected", checkbox.checked);
+      updateBulkBar("formats");
+    });
 
     const infoDiv = document.createElement("div");
     const nameDiv = document.createElement("div");
@@ -1870,6 +2016,7 @@ function renderLibraryLists(){
     actionsDiv.appendChild(editBtn);
     actionsDiv.appendChild(delBtn);
 
+    row.appendChild(checkbox);
     row.appendChild(infoDiv);
     row.appendChild(actionsDiv);
     fList.appendChild(row);
@@ -1885,7 +2032,18 @@ function renderLibraryLists(){
     const titleLine = [l.manufacturer, l.family].filter(Boolean).join(" ") || l.name;
 
     const row = document.createElement("div");
-    row.className = "entry-row";
+    row.className = "entry-row" + (librarySelection.lenses.has(l.id) ? " row-selected" : "");
+
+    const checkbox = document.createElement("input");
+    checkbox.type = "checkbox";
+    checkbox.className = "entry-row-checkbox";
+    checkbox.checked = librarySelection.lenses.has(l.id);
+    checkbox.addEventListener("change", ()=>{
+      if(checkbox.checked) librarySelection.lenses.add(l.id);
+      else librarySelection.lenses.delete(l.id);
+      row.classList.toggle("row-selected", checkbox.checked);
+      updateBulkBar("lenses");
+    });
 
     const infoDiv = document.createElement("div");
     const nameDiv = document.createElement("div");
@@ -1912,23 +2070,63 @@ function renderLibraryLists(){
     actionsDiv.appendChild(editBtn);
     actionsDiv.appendChild(delBtn);
 
+    row.appendChild(checkbox);
     row.appendChild(infoDiv);
     row.appendChild(actionsDiv);
     lList.appendChild(row);
   });
+
+  updateBulkBar("formats");
+  updateBulkBar("lenses");
 }
 
 document.getElementById("formatsEditToggle").addEventListener("click", ()=>{
   libraryEditMode.formats = !libraryEditMode.formats;
   document.getElementById("formatsEditToggle").classList.toggle("active", libraryEditMode.formats);
   document.getElementById("formatsEditToggle").textContent = libraryEditMode.formats ? "Done" : "Edit";
+  if(!libraryEditMode.formats) librarySelection.formats.clear(); // exiting edit mode clears selections
   renderLibraryLists();
 });
 document.getElementById("lensesEditToggle").addEventListener("click", ()=>{
   libraryEditMode.lenses = !libraryEditMode.lenses;
   document.getElementById("lensesEditToggle").classList.toggle("active", libraryEditMode.lenses);
   document.getElementById("lensesEditToggle").textContent = libraryEditMode.lenses ? "Done" : "Edit";
+  if(!libraryEditMode.lenses) librarySelection.lenses.clear(); // exiting edit mode clears selections
   renderLibraryLists();
+});
+
+document.getElementById("formatsBulkDelete").addEventListener("click", ()=>{
+  const ids = Array.from(librarySelection.formats);
+  if(ids.length === 0) return;
+  const ok = confirm(`Delete ${ids.length} sensor format${ids.length === 1 ? "" : "s"}? This cannot be undone.`);
+  if(!ok) return;
+  ids.forEach(id=>{
+    if(formatSelection.src === id) formatTreeExpansion.src = { manufacturer: null, family: null };
+    if(formatSelection.tgt === id) formatTreeExpansion.tgt = { manufacturer: null, family: null };
+  });
+  state.formats = state.formats.filter(f=>!librarySelection.formats.has(f.id));
+  librarySelection.formats.clear();
+  saveLibrary();
+  renderLibraryLists();
+  refreshAllSelects();
+  recalc();
+});
+
+document.getElementById("lensesBulkDelete").addEventListener("click", ()=>{
+  const ids = Array.from(librarySelection.lenses);
+  if(ids.length === 0) return;
+  const ok = confirm(`Delete ${ids.length} lens${ids.length === 1 ? "" : "es"}? This cannot be undone.`);
+  if(!ok) return;
+  ids.forEach(id=>{
+    if(lensSelection.src === id){ onLensPicked("src", ""); treeExpansion.src = { manufacturer: null, family: null }; }
+    if(lensSelection.tgt === id){ onLensPicked("tgt", ""); treeExpansion.tgt = { manufacturer: null, family: null }; }
+  });
+  state.lenses = state.lenses.filter(l=>!librarySelection.lenses.has(l.id));
+  librarySelection.lenses.clear();
+  saveLibrary();
+  renderLibraryLists();
+  refreshAllSelects();
+  recalc();
 });
 
 /* =========================================================
@@ -2189,6 +2387,8 @@ document.getElementById("btnResetLibrary").addEventListener("click", ()=>{
   treeExpansion.tgt = { manufacturer: null, family: null };
   formatTreeExpansion.src = { manufacturer: null, family: null };
   formatTreeExpansion.tgt = { manufacturer: null, family: null };
+  librarySelection.formats.clear();
+  librarySelection.lenses.clear();
   setSqueezeControl("src", 1.0); setSqueezeControl("tgt", 1.0);
   saveLibrary();
   renderLibraryLists();
