@@ -574,6 +574,56 @@
     margin-top: 2px;
   }
 
+  /* ---------- CROSS-PACKAGE EQUIVALENTS ---------- */
+  .cpe-scope{
+    font-family: var(--mono);
+    font-size: 12px;
+    color: var(--text-dim);
+    margin: 0 0 14px 0;
+  }
+  .cpe-tier{
+    border: 1px solid var(--divider);
+    border-radius: 6px;
+    padding: 12px 14px;
+    margin-bottom: 10px;
+  }
+  .cpe-tier:last-child{ margin-bottom: 0; }
+  .cpe-tier-header{
+    font-family: var(--mono);
+    font-size: 13px;
+    color: var(--accent);
+    font-weight: 600;
+    margin-bottom: 10px;
+    display:flex;
+    justify-content: space-between;
+    align-items:baseline;
+  }
+  .cpe-tier-header .cpe-lens-count{
+    font-size: 11px;
+    color: var(--text-dim);
+    font-weight: 400;
+  }
+  .cpe-format-row{
+    display:flex;
+    justify-content: space-between;
+    align-items:center;
+    padding: 7px 0;
+    border-top: 1px solid var(--divider);
+    font-family: var(--mono);
+    font-size: 12px;
+  }
+  .cpe-format-row:first-of-type{ border-top: none; }
+  .cpe-format-name{ color: var(--text); }
+  .cpe-format-result{ text-align:right; }
+  .cpe-format-result .cpe-nearest{ color: var(--accent); font-weight: 600; }
+  .cpe-format-result .cpe-diff{ color: var(--text-dim); margin-left: 6px; }
+  .cpe-tier-empty{
+    font-family: var(--mono);
+    font-size: 12px;
+    color: var(--text-dim);
+    font-style: italic;
+  }
+
   /* ---------- LIBRARY VIEW ---------- */
   .lib-grid{
     display:grid;
@@ -741,6 +791,37 @@
   }
   .form-grid .full{ grid-column: 1 / -1; }
 
+  .allowed-formats-list{
+    display:flex;
+    flex-direction: column;
+    gap: 6px;
+    max-height: 160px;
+    overflow-y: auto;
+    border: 1px solid var(--divider);
+    border-radius: 4px;
+    padding: 8px 10px;
+    background: var(--panel-raised);
+  }
+  .allowed-formats-list .af-row{
+    display:flex;
+    align-items:center;
+    gap: 8px;
+    font-family: var(--mono);
+    font-size: 12px;
+    color: var(--text);
+  }
+  .allowed-formats-list .af-row input[type=checkbox]{
+    accent-color: var(--accent);
+    width: 14px;
+    height: 14px;
+    cursor: pointer;
+  }
+  .allowed-formats-list .af-empty{
+    font-family: var(--mono);
+    font-size: 12px;
+    color: var(--text-dim);
+  }
+
   .modal-backdrop{
     position: fixed; inset:0;
     background: rgba(0,0,0,0.6);
@@ -798,7 +879,7 @@
     <div class="brand">
       <h1><span class="ring">◐</span> FOCAL</h1>
       <span class="tag">LENS / FORMAT MATCHER</span>
-      <span class="version-badge" id="versionBadge">v1.1</span>
+      <span class="version-badge" id="versionBadge">v1.3</span>
     </div>
     <div class="tabs">
       <button class="tab-btn active" data-view="calc">CALCULATOR</button>
@@ -907,6 +988,12 @@
           <p class="panel-label">Nearest available focal — target</p>
           <p class="nearest-focal-scope" id="nearestFocalScope"></p>
           <div class="nearest-focal-row" id="nearestFocalRow"></div>
+        </div>
+
+        <div class="panel" style="margin-bottom:18px;">
+          <p class="panel-label">Cross-package equivalents — source</p>
+          <p class="cpe-scope" id="cpeScope"></p>
+          <div id="cpeBody"></div>
         </div>
 
         <div class="diagram-wrap">
@@ -1090,6 +1177,10 @@
         <label>Anamorphic squeeze (1.0 = spherical)</label>
         <input type="number" id="lensSqueeze" step="0.01" min="1" value="1.0">
       </div>
+      <div class="field full">
+        <label>Associated formats — which sensor format(s) this lens family is intended for (sets the whole family, not just this lens)</label>
+        <div class="allowed-formats-list" id="lensAllowedFormatsList"></div>
+      </div>
     </div>
     <div class="modal-actions">
       <button class="ghost" id="lensCancel">Cancel</button>
@@ -1225,6 +1316,89 @@ function getFamilyFocals(lens){
     }
   });
   return focals;
+}
+
+/* allowedFormats is conceptually a FAMILY-level property (which sensor
+   formats this squeeze tier is intended/known to be used on), even though
+   it's stored redundantly on every lens record in that family for
+   simplicity. getFamilyAllowedFormats reads whichever sibling already has
+   it set, so the Add/Edit modal can auto-fill for a family's later
+   entries. propagateAllowedFormatsToFamily writes a saved value out to
+   every sibling, so the family never silently drifts to having different
+   lenses disagree about which formats they're meant for. */
+function getFamilyAllowedFormats(manufacturer, family){
+  const sibling = state.lenses.find(l=>
+    (l.manufacturer || "") === manufacturer &&
+    (l.family || l.name) === family &&
+    Array.isArray(l.allowedFormats) && l.allowedFormats.length > 0
+  );
+  return sibling ? [...sibling.allowedFormats] : [];
+}
+
+function propagateAllowedFormatsToFamily(manufacturer, family, allowedFormats, excludeId){
+  state.lenses.forEach(l=>{
+    if((l.manufacturer || "") === manufacturer && (l.family || l.name) === family && l.id !== excludeId){
+      l.allowedFormats = [...allowedFormats];
+    }
+  });
+}
+
+/* Returns every distinct squeeze value present in the library, each with
+   its full list of lenses — the basis for "show me equivalents across
+   every other squeeze tier I own" in the cross-package equivalents
+   section. Sorted ascending so spherical (1.0) leads. */
+function getSqueezeTiers(){
+  const tiers = {};
+  state.lenses.forEach(l=>{
+    const sq = l.squeeze || 1.0;
+    tiers[sq] = tiers[sq] || [];
+    tiers[sq].push(l);
+  });
+  return Object.keys(tiers).map(Number).sort((a,b)=>a-b).map(sq=>({ squeeze: sq, lenses: tiers[sq] }));
+}
+
+/* Every distinct format referenced by ANY lens within a squeeze tier's
+   lens list — a tier can span multiple lens families (e.g. two different
+   2x anamorphic lines), each with its own allowedFormats, so this unions
+   them rather than assuming one tier maps to one format. */
+function getFormatsForTier(tierLenses){
+  const formatIds = new Set();
+  tierLenses.forEach(l=>{
+    (l.allowedFormats||[]).forEach(fid=>formatIds.add(fid));
+  });
+  return Array.from(formatIds).map(fid=>getFormatById(fid)).filter(Boolean);
+}
+
+/* Core cross-package equivalents computation. Given the current reference
+   shot (source format/focal/squeeze), returns one entry per OTHER squeeze
+   tier in the library. Each entry lists every format that tier is
+   associated with, and for each format: the computed equivalent focal
+   (same horizontal-FoV-match convention used everywhere else in this
+   tool) plus the nearest REAL lens this tier actually owns to that value —
+   since a tier "having" 83.4mm as an equivalent is meaningless if nobody
+   owns an 83.4mm in that tier; what matters is what's actually in the kit.
+   Tiers with no allowedFormats set on any of their lenses still appear,
+   flagged as such, rather than silently vanishing. */
+function computeCrossPackageEquivalents(refFormat, refFocal, refSqueeze){
+  const allTiers = getSqueezeTiers();
+  return allTiers
+    .filter(tier => tier.squeeze !== refSqueeze)
+    .map(tier=>{
+      const formats = getFormatsForTier(tier.lenses);
+      const tierFocals = [];
+      tier.lenses.forEach(l=>{
+        tierFocals.push(l.focalMin);
+        if(l.focalMax !== l.focalMin) tierFocals.push(l.focalMax);
+      });
+
+      const formatResults = formats.map(fmt=>{
+        const eqFocal = equivalentFocal(refFocal, refFormat, fmt, refSqueeze, tier.squeeze);
+        const { below, above } = findNearestFocals(eqFocal, tierFocals);
+        return { format: fmt, eqFocal, below, above };
+      });
+
+      return { squeeze: tier.squeeze, lensCount: tier.lenses.length, formats: formatResults };
+    });
 }
 
 /* =========================================================
@@ -1495,6 +1669,7 @@ function recalc(){
   renderDetailTable(srcFmt, tgtFmt, srcFocal, eqFocal, crop, srcSqueeze, tgtSqueeze);
   renderNearestFocal(eqFocal, tgtLens);
   renderQuickFocalChips(srcFocal, srcLens);
+  renderCrossPackageEquivalents(srcFmt, srcFocal, srcSqueeze);
 }
 
 function renderDetailTable(srcFmt, tgtFmt, srcFocal, eqFocal, crop, srcSqueeze, tgtSqueeze){
@@ -1563,6 +1738,73 @@ function renderNearestFocal(eqFocal, tgtLens){
     <div class="nf-arrow">target<span class="nf-target-value">${eqFocal.toFixed(1)}mm</span></div>
     ${cardFor(above, "above")}
   `;
+}
+
+/* Cross-package equivalents: given the SOURCE side as the reference shot
+   (lens + focal + squeeze + format), shows what every OTHER squeeze tier
+   in the library would need to match it — across every format that tier
+   is actually associated with, not just one assumed format, since a
+   squeeze tier can be used on more than one format in practice. */
+function renderCrossPackageEquivalents(refFormat, refFocal, refSqueeze){
+  const scopeEl = document.getElementById("cpeScope");
+  const bodyEl = document.getElementById("cpeBody");
+
+  const squeezeLabel = refSqueeze > 1.001 ? `${refSqueeze.toFixed(2).replace(/\.?0+$/,"")}x anamorphic` : "spherical";
+  scopeEl.textContent = `Reference: ${refFocal}mm (${squeezeLabel}) on ${refFormat.name}`;
+
+  const results = computeCrossPackageEquivalents(refFormat, refFocal, refSqueeze);
+
+  if(results.length === 0){
+    bodyEl.innerHTML = `<p class="cpe-tier-empty">Only one squeeze tier exists in your library — add lenses with a different squeeze to compare across packages.</p>`;
+    return;
+  }
+
+  bodyEl.innerHTML = "";
+  results.forEach(tier=>{
+    const tierDiv = document.createElement("div");
+    tierDiv.className = "cpe-tier";
+
+    const header = document.createElement("div");
+    header.className = "cpe-tier-header";
+    const tierLabel = tier.squeeze > 1.001 ? `${tier.squeeze.toFixed(2).replace(/\.?0+$/,"")}x anamorphic` : "Spherical (1.0x)";
+    header.innerHTML = `<span>${tierLabel}</span><span class="cpe-lens-count">${tier.lensCount} lens${tier.lensCount===1?"":"es"} in library</span>`;
+    tierDiv.appendChild(header);
+
+    if(tier.formats.length === 0){
+      const empty = document.createElement("p");
+      empty.className = "cpe-tier-empty";
+      empty.textContent = "No associated formats set for this tier yet — set them in the Lenses tab (Edit a lens in this tier → Associated formats).";
+      tierDiv.appendChild(empty);
+    } else {
+      tier.formats.forEach(fr=>{
+        const row = document.createElement("div");
+        row.className = "cpe-format-row";
+
+        const nameSpan = document.createElement("span");
+        nameSpan.className = "cpe-format-name";
+        nameSpan.textContent = fr.format.name;
+
+        const resultSpan = document.createElement("span");
+        resultSpan.className = "cpe-format-result";
+        const parts = [];
+        if(fr.below != null){
+          const diff = fr.below - fr.eqFocal;
+          parts.push(`<span class="cpe-nearest">${fr.below}mm</span><span class="cpe-diff">${diff===0?"exact":diff.toFixed(1)+"mm"}</span>`);
+        }
+        if(fr.above != null && fr.above !== fr.below){
+          const diff = fr.above - fr.eqFocal;
+          parts.push(`<span class="cpe-nearest">${fr.above}mm</span><span class="cpe-diff">+${diff.toFixed(1)}mm</span>`);
+        }
+        resultSpan.innerHTML = parts.length > 0 ? parts.join(" · ") : `<span class="cpe-diff">no focal in this tier</span>`;
+
+        row.appendChild(nameSpan);
+        row.appendChild(resultSpan);
+        tierDiv.appendChild(row);
+      });
+    }
+
+    bodyEl.appendChild(tierDiv);
+  });
 }
 
 /* Quick-tap focal chips under the source slider — same underlying data
@@ -2206,7 +2448,12 @@ function renderLibraryLists(){
     metaDiv.className = "e-meta";
     const circleLabel = l.circle != null ? `image circle ⌀${l.circle}mm` : "image circle unknown";
     const serialLabel = l.serial ? ` · S/N ${l.serial}` : "";
-    metaDiv.textContent = `${circleLabel}${l.nativeFormat ? " · "+l.nativeFormat : ""}${anaTag}${serialLabel}`;
+    const allowedNames = (l.allowedFormats||[]).map(fid=>{
+      const f = getFormatById(fid);
+      return f ? f.name : null;
+    }).filter(Boolean);
+    const allowedLabel = allowedNames.length > 0 ? ` · for: ${allowedNames.join(", ")}` : "";
+    metaDiv.textContent = `${circleLabel}${l.nativeFormat ? " · "+l.nativeFormat : ""}${anaTag}${serialLabel}${allowedLabel}`;
     infoDiv.appendChild(nameDiv);
     infoDiv.appendChild(metaDiv);
 
@@ -2354,6 +2601,30 @@ function deleteFormat(id){
    LIBRARY VIEW: LENS MODAL
    ========================================================= */
 const lensModalBackdrop = document.getElementById("lensModalBackdrop");
+
+function renderAllowedFormatsCheckboxes(preselectedIds){
+  const container = document.getElementById("lensAllowedFormatsList");
+  container.innerHTML = "";
+  if(state.formats.length === 0){
+    container.innerHTML = `<span class="af-empty">No sensor formats in your library yet — add one in the Formats tab first.</span>`;
+    return;
+  }
+  state.formats.forEach(f=>{
+    const row = document.createElement("label");
+    row.className = "af-row";
+    const cb = document.createElement("input");
+    cb.type = "checkbox";
+    cb.value = f.id;
+    cb.checked = preselectedIds.includes(f.id);
+    const titleLine = [f.manufacturer, f.family].filter(Boolean).join(" ");
+    const span = document.createElement("span");
+    span.textContent = titleLine ? `${titleLine} — ${f.name}` : f.name;
+    row.appendChild(cb);
+    row.appendChild(span);
+    container.appendChild(row);
+  });
+}
+
 function openLensModal(id){
   document.getElementById("lensModalTitle").textContent = id ? "Edit lens" : "Add lens";
   document.getElementById("lensEditId").value = id || "";
@@ -2367,8 +2638,40 @@ function openLensModal(id){
   document.getElementById("lensNativeFormat").value = l ? (l.nativeFormat||"") : "";
   document.getElementById("lensSerial").value = l ? (l.serial||"") : "";
   document.getElementById("lensSqueeze").value = l ? (l.squeeze||1.0) : 1.0;
+
+  // Auto-fill associated formats from a sibling in the same family if one
+  // exists (editing uses this lens's own value; adding new uses whatever
+  // the family has already agreed on, if anything).
+  let preselected = [];
+  if(l && Array.isArray(l.allowedFormats)){
+    preselected = [...l.allowedFormats];
+  } else if(!l){
+    // Re-check on manufacturer/family input too (wired below), but seed
+    // with empty for a brand new family.
+    preselected = [];
+  }
+  renderAllowedFormatsCheckboxes(preselected);
+
   lensModalBackdrop.classList.remove("hidden");
 }
+
+// When adding a new lens, re-check the family auto-fill live as the person
+// types manufacturer/family — covers the case of adding a second focal to
+// an existing family without having to reopen the modal.
+function maybeAutoFillAllowedFormats(){
+  const id = document.getElementById("lensEditId").value;
+  if(id) return; // editing an existing lens — don't override their own data
+  const mfg = document.getElementById("lensManufacturer").value.trim();
+  const fam = document.getElementById("lensFamily").value.trim();
+  if(!mfg && !fam) return;
+  const inherited = getFamilyAllowedFormats(mfg, fam);
+  if(inherited.length > 0){
+    renderAllowedFormatsCheckboxes(inherited);
+  }
+}
+document.getElementById("lensManufacturer").addEventListener("blur", maybeAutoFillAllowedFormats);
+document.getElementById("lensFamily").addEventListener("blur", maybeAutoFillAllowedFormats);
+
 function closeLensModal(){ lensModalBackdrop.classList.add("hidden"); }
 document.getElementById("btnAddLens").addEventListener("click", ()=>openLensModal(null));
 document.getElementById("lensCancel").addEventListener("click", closeLensModal);
@@ -2389,6 +2692,7 @@ document.getElementById("lensSave").addEventListener("click", ()=>{
   const nativeFormat = document.getElementById("lensNativeFormat").value.trim();
   const serial = document.getElementById("lensSerial").value.trim();
   const squeeze = parseFloat(document.getElementById("lensSqueeze").value) || 1.0;
+  const allowedFormats = Array.from(document.querySelectorAll("#lensAllowedFormatsList input[type=checkbox]:checked")).map(cb=>cb.value);
   const nameMissing = !name;
   const focalMinMissing = isNaN(focalMin);
   const circleInvalid = circle !== null && isNaN(circle);
@@ -2406,8 +2710,12 @@ document.getElementById("lensSave").addEventListener("click", ()=>{
     l.manufacturer = manufacturer; l.family = family; l.name = name;
     l.focalMin = focalMin; l.focalMax = focalMax; l.circle = circle;
     l.nativeFormat = nativeFormat; l.serial = serial; l.squeeze = squeeze;
+    l.allowedFormats = allowedFormats;
+    propagateAllowedFormatsToFamily(manufacturer, family, allowedFormats, id);
   } else {
-    state.lenses.push({ id: "l_"+Date.now(), manufacturer, family, name, focalMin, focalMax, circle, nativeFormat, serial, squeeze });
+    const newId = "l_"+Date.now();
+    state.lenses.push({ id: newId, manufacturer, family, name, focalMin, focalMax, circle, nativeFormat, serial, squeeze, allowedFormats });
+    propagateAllowedFormatsToFamily(manufacturer, family, allowedFormats, newId);
   }
   saveLibrary();
   renderLibraryLists();
@@ -2453,7 +2761,8 @@ function toCsv(rows, headers){
 
 document.getElementById("btnExportCsv").addEventListener("click", ()=>{
   const fmtCsv = toCsv(state.formats, ["id","manufacturer","family","name","width","height","notes"]);
-  const lensCsv = toCsv(state.lenses, ["id","manufacturer","family","name","focalMin","focalMax","circle","nativeFormat","serial","squeeze"]);
+  const lensRowsForCsv = state.lenses.map(l=> ({ ...l, allowedFormats: (l.allowedFormats||[]).join(";") }));
+  const lensCsv = toCsv(lensRowsForCsv, ["id","manufacturer","family","name","focalMin","focalMax","circle","nativeFormat","serial","squeeze","allowedFormats"]);
   downloadBlob("focal-formats.csv", fmtCsv, "text/csv");
   setTimeout(()=> downloadBlob("focal-lenses.csv", lensCsv, "text/csv"), 150);
 });
@@ -2485,9 +2794,24 @@ function mergeByName(existing, incoming, idPrefix){
   incoming.forEach(item=>{
     const match = existing.find(e=> e.name.toLowerCase() === String(item.name).toLowerCase());
     if(match){
+      // Update an existing entry's fields, but never let its id change —
+      // other records (e.g. a lens's allowedFormats) may already be
+      // referencing match.id, and changing it out from under them would
+      // silently break those references.
+      const preservedId = match.id;
       Object.assign(match, item);
+      match.id = preservedId;
     } else {
-      item.id = idPrefix + Date.now() + Math.floor(Math.random()*1000);
+      // Preserve the imported item's own id when present and not already
+      // taken — this matters for JSON backups specifically, since they can
+      // carry cross-references (e.g. a lens's allowedFormats pointing at a
+      // format's id) that would silently break if the id were discarded
+      // and replaced here. CSV imports typically have no meaningful id of
+      // their own, so this just falls through to generating one as before.
+      const idTaken = item.id && existing.some(e=>e.id===item.id);
+      if(!item.id || idTaken){
+        item.id = idPrefix + Date.now() + Math.floor(Math.random()*1000);
+      }
       existing.push(item);
     }
   });
@@ -2519,6 +2843,7 @@ document.getElementById("importFile").addEventListener("change", (e)=>{
             const parsedCircle = parseFloat(r.circle);
             r.circle = isNaN(parsedCircle) ? null : parsedCircle;
             r.squeeze = parseFloat(r.squeeze)||1.0;
+            r.allowedFormats = r.allowedFormats ? r.allowedFormats.split(";").filter(Boolean) : [];
           });
           mergeByName(state.lenses, rows, "l_");
         }
