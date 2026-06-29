@@ -1,0 +1,65 @@
+{
+  "formats": [
+    {
+      "id": "ff",
+      "name": "Full Frame (36×24)",
+      "manufacturer": "Generic",
+      "family": "Full Frame",
+      "width": 36,
+      "height": 24,
+      "notes": "Sony Venice 2 FF, Alexa 35 (open gate large format)"
+    },
+    {
+      "id": "f_1782683309540614",
+      "name": "Venice 8.6K 3:2 Full Frame",
+      "width": 35.9,
+      "height": 24,
+      "notes": "_custom_sony",
+      "manufacturer": "SONY",
+      "family": "Venice 2"
+    },
+    {
+      "id": "f_1782683309540656",
+      "name": "Venice 5.8K 6:5 Super 35",
+      "width": 24.1,
+      "height": 20.2,
+      "notes": "_custom_sony",
+      "manufacturer": "SONY",
+      "family": "Venice 2"
+    },
+    {
+      "id": "f_1782683309540942",
+      "name": "Venice 5.8K 17:9 Super 35",
+      "width": 24.1,
+      "height": 12.7,
+      "notes": "_custom_sony",
+      "manufacturer": "SONY",
+      "family": "Venice 2"
+    }
+  ],
+  "lenses": [
+    {
+      "id": "l1",
+      "name": "35mm",
+      "manufacturer": "ARRI",
+      "family": "Signature Prime",
+      "focalMin": 35,
+      "focalMax": 35,
+      "circle": 46.5,
+      "nativeFormat": "Full Frame",
+      "squeeze": 1
+    },
+    {
+      "id": "l_1782683309540776",
+      "manufacturer": "XT",
+      "family": "XTAL",
+      "name": "32",
+      "focalMin": 32,
+      "focalMax": 32,
+      "circle": null,
+      "nativeFormat": "S35",
+      "squeeze": 2
+    }
+  ],
+  "exportedAt": "2026-06-29T13:12:52.819Z"
+}
