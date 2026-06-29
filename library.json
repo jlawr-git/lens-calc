@@ -35,6 +35,15 @@
       "notes": "_custom_sony",
       "manufacturer": "SONY",
       "family": "Venice 2"
+    },
+    {
+      "id": "f_1782739461808",
+      "manufacturer": "RED",
+      "family": "Komodo-X",
+      "name": "Komodo 6K 17:9",
+      "width": 27.03,
+      "height": 14.26,
+      "notes": ""
     }
   ],
   "lenses": [
@@ -61,5 +70,5 @@
       "squeeze": 2
     }
   ],
-  "exportedAt": "2026-06-29T13:12:52.819Z"
+  "exportedAt": "2026-06-29T13:24:24.195Z"
 }
