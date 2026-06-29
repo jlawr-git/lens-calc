@@ -453,6 +453,7 @@
   .status-dot{
     width:8px; height:8px; border-radius:50%;
     flex-shrink:0;
+    background: var(--text-dim);
   }
   .status-banner.ok .status-dot{ background: var(--ok); }
   .status-banner.warn .status-dot{ background: var(--warn); }
@@ -1023,6 +1024,11 @@
 
   <!-- ===================== FORMATS VIEW ===================== -->
   <div class="view" id="view-formats">
+    <div class="status-banner hidden" id="syncStatusBanner">
+      <span class="status-dot"></span>
+      <span id="syncStatusText"></span>
+      <button class="small" id="syncPauseToggle" style="margin-left:auto;">Pause sync</button>
+    </div>
     <div class="lib-toolbar">
       <p class="panel-label" style="margin:0; flex:1;">Sensor formats</p>
       <button class="small" id="formatsSortToggle">A–Z</button>
@@ -1049,6 +1055,9 @@
       </div>
       <p class="footer-note">
         JSON export preserves both formats and lenses in one file. CSV export produces two files since CSV is a flat format — re-importing a CSV will only update whichever type matches its columns. Imports merge by name (same-name entries get overwritten); they do not delete entries absent from the file. Reset to defaults clears both formats and lenses.
+      </p>
+      <p class="footer-note">
+        <strong>Team library sync:</strong> if a <code>library.json</code> file exists in the same folder as this page (e.g. committed to the same GitHub Pages repo), it's fetched automatically on every load and replaces your local library — this keeps everyone's formats/lenses identical. To push an update: make your changes here, click <em>Export JSON (all)</em>, and upload that exported file to the repo as <code>library.json</code>, replacing the old one. There's no merging — the shared file always wins on load, so anyone with unpushed local-only changes should use <em>Pause sync</em> above first.
       </p>
     </div>
   </div>
@@ -1220,6 +1229,154 @@ function saveLibrary(){
 }
 
 let state = loadLibrary();
+
+/* =========================================================
+   SHARED LIBRARY SYNC (team-wide formats/lenses via a JSON file
+   committed alongside index.html on GitHub Pages)
+   =========================================================
+   Design: the shared file is the source of truth for a team that edits
+   it rarely and deliberately (export from the app -> upload to replace
+   library.json in the repo). On every load, this fetches that file and,
+   if found and sync isn't paused, OVERWRITES local state with it —
+   deliberately not merged, since merge logic (what happens when the
+   shared file removes something you have locally, or edits something
+   you also edited locally) is real complexity this team's workflow
+   doesn't need. A local "pause sync" toggle exists specifically for the
+   case where someone is mid-edit locally and doesn't want a reload to
+   wipe their in-progress local-only changes.
+   Fails silently (falls back to local/default state) if the file is
+   missing (404 — totally normal before anyone's set this up yet) or
+   unreachable (offline) — this is a nice-to-have enhancement layered on
+   top of a fully-functional local-only app, not a hard dependency.
+*/
+const SHARED_LIBRARY_URL = "./library.json";
+const SYNC_PAUSED_KEY = "focal_sync_paused";
+
+const syncStatus = {
+  state: "checking",   // "checking" | "synced" | "paused" | "not-found" | "error" | "local-only"
+  lastSyncedAt: null,
+  detail: ""
+};
+
+function isSyncPaused(){
+  return localStorage.getItem(SYNC_PAUSED_KEY) === "1";
+}
+function setSyncPaused(paused){
+  localStorage.setItem(SYNC_PAUSED_KEY, paused ? "1" : "0");
+}
+
+/* Cheap structural sanity check before accepting fetched data — guards
+   against a malformed/partial library.json (bad upload, merge conflict
+   markers left in the file, etc.) silently wiping a working local
+   library with garbage. */
+function isValidLibraryPayload(payload){
+  if(!payload || typeof payload !== "object") return false;
+  if(!Array.isArray(payload.formats) || !Array.isArray(payload.lenses)) return false;
+  const formatsOk = payload.formats.every(f => f && typeof f.id === "string" && typeof f.width === "number" && typeof f.height === "number");
+  const lensesOk = payload.lenses.every(l => l && typeof l.id === "string" && typeof l.focalMin === "number");
+  return formatsOk && lensesOk;
+}
+
+async function fetchSharedLibrary(){
+  if(isSyncPaused()){
+    syncStatus.state = "paused";
+    renderSyncStatus();
+    return;
+  }
+  try{
+    const res = await fetch(SHARED_LIBRARY_URL, { cache: "no-store" });
+    if(res.status === 404){
+      syncStatus.state = "not-found";
+      renderSyncStatus();
+      return;
+    }
+    if(!res.ok){
+      syncStatus.state = "error";
+      syncStatus.detail = `HTTP ${res.status}`;
+      renderSyncStatus();
+      return;
+    }
+    const payload = await res.json();
+    if(!isValidLibraryPayload(payload)){
+      syncStatus.state = "error";
+      syncStatus.detail = "library.json found but malformed (missing/invalid formats or lenses)";
+      renderSyncStatus();
+      return;
+    }
+    state.formats = payload.formats;
+    state.lenses = payload.lenses;
+    saveLibrary();
+    syncStatus.state = "synced";
+    syncStatus.lastSyncedAt = new Date();
+    syncStatus.detail = payload.exportedAt ? `library.json exported ${new Date(payload.exportedAt).toLocaleString()}` : "";
+    renderSyncStatus();
+    // Re-render everything against the newly-synced data. Selections that
+    // no longer exist in the new library are cleared defensively by
+    // refreshAllSelects()/recalc()'s own existing empty-state handling.
+    refreshAllSelects();
+    renderLibraryLists();
+    recalc();
+  }catch(err){
+    // Typically offline, or fetch blocked (e.g. opening index.html directly
+    // from disk rather than via a server — fetch of a relative path can
+    // fail under file:// in some browsers). Fall back to local silently;
+    // this should never be a hard error to the person using the tool.
+    syncStatus.state = "error";
+    syncStatus.detail = "Could not reach library.json (offline, or running from a local file rather than a server).";
+    renderSyncStatus();
+  }
+}
+
+function renderSyncStatus(){
+  const el = document.getElementById("syncStatusBanner");
+  const textEl = document.getElementById("syncStatusText");
+  const toggleBtn = document.getElementById("syncPauseToggle");
+  if(!el) return; // not yet in DOM during very first call ordering — safe no-op
+
+  toggleBtn.textContent = isSyncPaused() ? "Resume sync" : "Pause sync";
+
+  el.classList.remove("hidden");
+  switch(syncStatus.state){
+    case "checking":
+      el.className = "status-banner";
+      textEl.textContent = "Checking for shared library.json…";
+      break;
+    case "synced":
+      el.className = "status-banner ok";
+      textEl.textContent = `Synced with team library.json${syncStatus.detail ? " — " + syncStatus.detail : ""}.`;
+      break;
+    case "paused":
+      el.className = "status-banner warn";
+      textEl.textContent = "Sync paused — using local library only. Resume to pull the latest team library.json on next reload.";
+      break;
+    case "not-found":
+      el.className = "status-banner";
+      textEl.textContent = "No library.json found next to this page — using local library only. (Expected until your team sets one up — see note below.)";
+      break;
+    case "error":
+      el.className = "status-banner warn";
+      textEl.textContent = `Couldn't sync shared library: ${syncStatus.detail || "unknown error"}. Using local library.`;
+      break;
+    default:
+      el.className = "status-banner";
+      textEl.textContent = "";
+  }
+}
+
+document.addEventListener("DOMContentLoaded", ()=>{
+  const toggleBtn = document.getElementById("syncPauseToggle");
+  if(toggleBtn){
+    toggleBtn.addEventListener("click", ()=>{
+      setSyncPaused(!isSyncPaused());
+      if(isSyncPaused()){
+        syncStatus.state = "paused";
+        renderSyncStatus();
+      } else {
+        fetchSharedLibrary();
+      }
+    });
+  }
+});
 
 /* =========================================================
    MATH
@@ -2885,6 +3042,8 @@ document.getElementById("btnResetLibrary").addEventListener("click", ()=>{
    ========================================================= */
 refreshAllSelects();
 recalc();
+renderSyncStatus();
+fetchSharedLibrary();
 </script>
 </body>
 </html>
