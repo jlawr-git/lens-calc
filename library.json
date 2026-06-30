@@ -44,6 +44,15 @@
       "width": 27.03,
       "height": 14.26,
       "notes": ""
+    },
+    {
+      "id": "f_1782852652264",
+      "manufacturer": "Z-CAM",
+      "family": "E2-F6",
+      "name": "Z-CAM E2-F6 FF 3:2",
+      "width": 36,
+      "height": 24,
+      "notes": ""
     }
   ],
   "lenses": [
@@ -70,5 +79,5 @@
       "squeeze": 2
     }
   ],
-  "exportedAt": "2026-06-29T13:24:24.195Z"
+  "exportedAt": "2026-06-30T20:51:10.652Z"
 }
